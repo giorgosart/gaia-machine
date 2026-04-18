@@ -183,13 +183,13 @@ export const MACHINES: MachineDef[] = [
 
 // ---------- REGIONS (8 distinct regions placed around a circle) ----------
 export const REGIONS: RegionDef[] = [
-  { id: 'north_wilds', name: 'Northern Wilds',  terrain: 'tundra',   nx:  0.02, ny: -0.74, init: { moisture: 60, temperature: 20, flora: 30, fauna: 30, prosperity: 10, tectonic: 30 } },
-  { id: 'iron_peaks', name: 'Iron Peaks',       terrain: 'mountain', nx:  0.60, ny: -0.42, init: { moisture: 40, temperature: 35, flora: 20, fauna: 20, prosperity: 15, tectonic: 70 } },
-  { id: 'sunlands',   name: 'Sunlands',         terrain: 'desert',   nx:  0.72, ny:  0.18, init: { moisture: 15, temperature: 80, flora: 15, fauna: 15, prosperity: 25, tectonic: 30 } },
-  { id: 'verdant',    name: 'Verdant Reach',    terrain: 'forest',   nx:  0.38, ny:  0.60, init: { moisture: 70, temperature: 55, flora: 75, fauna: 65, prosperity: 30, tectonic: 20 } },
-  { id: 'lowlands',   name: 'The Lowlands',     terrain: 'plains',   nx: -0.15, ny:  0.72, init: { moisture: 50, temperature: 55, flora: 55, fauna: 45, prosperity: 60, tectonic: 20, pollution: 25 } },
-  { id: 'green_isle', name: 'Emerald Isles',    terrain: 'jungle',   nx: -0.62, ny:  0.42, init: { moisture: 80, temperature: 70, flora: 80, fauna: 70, prosperity: 25, tectonic: 25 } },
-  { id: 'ashen',      name: 'Ashen Reach',      terrain: 'volcanic', nx: -0.78, ny: -0.10, init: { moisture: 25, temperature: 70, flora: 10, fauna: 10, prosperity: 10, tectonic: 80 } },
+  { id: 'north_wilds', name: 'Northern Wilds',  terrain: 'tundra',   nx:  0.02, ny: -0.99, init: { moisture: 60, temperature: 20, flora: 30, fauna: 30, prosperity: 10, tectonic: 30 } },
+  { id: 'iron_peaks', name: 'Iron Peaks',       terrain: 'mountain', nx:  0.80, ny: -0.54, init: { moisture: 40, temperature: 35, flora: 20, fauna: 20, prosperity: 15, tectonic: 70 } },
+  { id: 'sunlands',   name: 'Sunlands',         terrain: 'desert',   nx:  -0.62, ny:  -0.58, init: { moisture: 15, temperature: 80, flora: 15, fauna: 15, prosperity: 25, tectonic: 30 } },
+  { id: 'verdant',    name: 'Verdant Reach',    terrain: 'forest',   nx:  -0.80, ny:  0.30, init: { moisture: 70, temperature: 55, flora: 75, fauna: 65, prosperity: 30, tectonic: 20 } },
+  { id: 'lowlands',   name: 'The Lowlands',     terrain: 'plains',   nx: -0.15, ny:  0.92, init: { moisture: 50, temperature: 55, flora: 55, fauna: 45, prosperity: 60, tectonic: 20, pollution: 25 } },
+  { id: 'green_isle', name: 'Emerald Isles',    terrain: 'jungle',   nx: 0.28, ny:  0.48, init: { moisture: 80, temperature: 70, flora: 80, fauna: 70, prosperity: 25, tectonic: 25 } },
+  { id: 'ashen',      name: 'Ashen Reach',      terrain: 'volcanic', nx: 0.98, ny: 0.28, init: { moisture: 25, temperature: 70, flora: 10, fauna: 10, prosperity: 10, tectonic: 80 } },
   { id: 'deep_sea',   name: 'The Deep',         terrain: 'water',    nx:  0.00, ny:  0.00, init: { moisture: 95, temperature: 45, flora: 40, fauna: 60, prosperity: 5,  tectonic: 35 } },
 ];
 

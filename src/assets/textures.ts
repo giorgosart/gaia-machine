@@ -343,43 +343,69 @@ export function makeIcon(scene: Phaser.Scene, key: string, kind: IconKind, size 
 }
 
 // ---------- World platform background ----------
-export function makeWorldPlatform(scene: Phaser.Scene, key: string, size: number) {  const { c, ctx } = makeCanvas(size, size);
-  const cx = size / 2, cy = size / 2;
-  // outer ornate ring (bronze)
-  const ringG = ctx.createRadialGradient(cx, cy, size * 0.42, cx, cy, size * 0.5);
-  ringG.addColorStop(0, '#3a2818');
-  ringG.addColorStop(0.3, '#8a6638');
-  ringG.addColorStop(0.6, '#e8b878');
-  ringG.addColorStop(1, '#3a2818');
-  ctx.fillStyle = ringG;
-  ctx.beginPath(); ctx.arc(cx, cy, size * 0.5, 0, Math.PI * 2); ctx.fill();
-  // engraved runes ring
-  ctx.strokeStyle = '#3a2818'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(cx, cy, size * 0.46, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx, cy, size * 0.435, 0, Math.PI * 2); ctx.stroke();
-  // rune marks
-  for (let i = 0; i < 24; i++) {
-    const a = (i / 24) * Math.PI * 2;
-    const r1 = size * 0.44, r2 = size * 0.455;
-    ctx.strokeStyle = i % 6 === 0 ? '#f0c860' : '#3a2818';
-    ctx.lineWidth = i % 6 === 0 ? 3 : 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
-    ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
-    ctx.stroke();
-  }
-  // inner ocean
-  const ocean = ctx.createRadialGradient(cx - size * 0.1, cy - size * 0.1, size * 0.05, cx, cy, size * 0.42);
+// The planet's atmospheric shell: ocean disc surrounded by soft stratospheric
+// bands (troposphere → stratosphere → ozone glow) instead of a metallic frame.
+//
+// Coordinate note: `size` is the intended on-screen diameter. The canvas is
+// rendered slightly larger so the outer ozone halo isn't clipped at the edges
+// of the texture. Downstream code keeps using `size` as the placement radius
+// reference because all features are drawn relative to it.
+export function makeWorldPlatform(scene: Phaser.Scene, key: string, size: number) {
+  const pad = Math.ceil(size * 0.08); // room for the outer halo
+  const dim = size + pad * 2;
+  const { c, ctx } = makeCanvas(dim, dim);
+  const cx = dim / 2, cy = dim / 2;
+  const oceanR = size * 0.42;
+
+  // 1) Outer ozone halo — soft teal/gold bloom that fades into space.
+  const halo = ctx.createRadialGradient(cx, cy, oceanR * 0.98, cx, cy, size * 0.54);
+  halo.addColorStop(0.00, 'rgba(120,220,220,0.00)');
+  halo.addColorStop(0.25, 'rgba(140,220,210,0.18)');
+  halo.addColorStop(0.55, 'rgba(180,220,180,0.12)');
+  halo.addColorStop(0.85, 'rgba(110,150,180,0.05)');
+  halo.addColorStop(1.00, 'rgba(20,40,80,0.0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(cx, cy, size * 0.54, 0, Math.PI * 2); ctx.fill();
+
+  // 2) Stratosphere — a thin, cool cyan band that rings the planet.
+  const strato = ctx.createRadialGradient(cx, cy, oceanR * 0.995, cx, cy, size * 0.48);
+  strato.addColorStop(0.00, 'rgba(180,230,255,0.55)');
+  strato.addColorStop(0.40, 'rgba(120,180,230,0.35)');
+  strato.addColorStop(1.00, 'rgba(60,100,160,0.00)');
+  ctx.fillStyle = strato;
+  ctx.beginPath(); ctx.arc(cx, cy, size * 0.48, 0, Math.PI * 2); ctx.fill();
+
+  // 3) Troposphere rim — bright inner crescent of atmosphere where light
+  //    catches the edge of the planet (slight top-left bias for faux lighting).
+  const tropo = ctx.createRadialGradient(
+    cx - size * 0.06, cy - size * 0.06, oceanR * 0.92,
+    cx, cy, oceanR * 1.04,
+  );
+  tropo.addColorStop(0.00, 'rgba(255,255,255,0.0)');
+  tropo.addColorStop(0.85, 'rgba(200,240,255,0.35)');
+  tropo.addColorStop(1.00, 'rgba(160,220,255,0.0)');
+  ctx.fillStyle = tropo;
+  ctx.beginPath(); ctx.arc(cx, cy, oceanR * 1.04, 0, Math.PI * 2); ctx.fill();
+
+  // 4) Thin ozone arc — subtle violet-gold line just above the surface.
+  ctx.strokeStyle = 'rgba(220,200,140,0.18)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(cx, cy, oceanR * 1.015, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(170,210,230,0.22)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.arc(cx, cy, oceanR * 1.035, 0, Math.PI * 2); ctx.stroke();
+
+  // 5) Inner ocean — same deep-water disc as before.
+  const ocean = ctx.createRadialGradient(
+    cx - size * 0.1, cy - size * 0.1, size * 0.05,
+    cx, cy, oceanR,
+  );
   ocean.addColorStop(0, '#3a8ab8');
   ocean.addColorStop(0.5, '#1f5278');
   ocean.addColorStop(1, '#0a2238');
   ctx.fillStyle = ocean;
-  ctx.beginPath(); ctx.arc(cx, cy, size * 0.42, 0, Math.PI * 2); ctx.fill();
-  // rivets around outer ring
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
-    rivetCircle(ctx, cx + Math.cos(a) * size * 0.485, cy + Math.sin(a) * size * 0.485, 5);
-  }
+  ctx.beginPath(); ctx.arc(cx, cy, oceanR, 0, Math.PI * 2); ctx.fill();
+
   addTexture(scene, key, c);
 }
 
@@ -393,19 +419,19 @@ export function makeWorldPlatform(scene: Phaser.Scene, key: string, size: number
 export type ContinentLayout = { id: string; terrain: Terrain; nx: number; ny: number; baseR: number };
 export const CONTINENT_LAYOUT: ContinentLayout[] = [
   // Broad polar cap — elongated east-west, sits high on the globe.
-  { id: 'north_wilds', terrain: 'tundra',   nx:  0.02, ny: -0.74, baseR: 0.12 },
+  { id: 'north_wilds', terrain: 'tundra',   nx:  0.02, ny: -0.99, baseR: 0.12 },
   // Tilted highland belt tapering north-east.
-  { id: 'iron_peaks',  terrain: 'mountain', nx:  0.60, ny: -0.42, baseR: 0.11 },
+  { id: 'iron_peaks',  terrain: 'mountain', nx:  0.80, ny: -0.54, baseR: 0.11 },
   // Broad arid continental arc along the eastern flank.
-  { id: 'sunlands',    terrain: 'desert',   nx:  0.72, ny:  0.18, baseR: 0.12 },
+  { id: 'sunlands',    terrain: 'desert',   nx:  -0.62, ny:  -0.58, baseR: 0.12 },
   // Lush forested interior, broad and slightly tilted.
-  { id: 'verdant',     terrain: 'forest',   nx:  0.38, ny:  0.60, baseR: 0.11 },
+  { id: 'verdant',     terrain: 'forest',   nx:  -0.80, ny:  0.30, baseR: 0.11 },
   // Wide fertile basin across the southern latitudes.
-  { id: 'lowlands',    terrain: 'plains',   nx: -0.15, ny:  0.72, baseR: 0.12 },
+  { id: 'lowlands',    terrain: 'plains',   nx: -0.15, ny:  0.92, baseR: 0.12 },
   // Coastal archipelago / small jungle landmass to the south-west.
-  { id: 'green_isle',  terrain: 'jungle',   nx: -0.62, ny:  0.42, baseR: 0.08 },
+  { id: 'green_isle',  terrain: 'jungle',   nx: 0.28, ny:  0.48, baseR: 0.08 },
   // Fractured volcanic territory on the western shelf.
-  { id: 'ashen',       terrain: 'volcanic', nx: -0.78, ny: -0.10, baseR: 0.10 },
+  { id: 'ashen',       terrain: 'volcanic', nx: 0.98, ny: 0.28, baseR: 0.10 },
   // Abyssal marine zone at the globe's heart, surrounded by landmasses.
   { id: 'deep_sea',    terrain: 'water',    nx:  0.00, ny:  0.00, baseR: 0.11 },
 ];

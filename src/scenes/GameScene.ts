@@ -143,13 +143,11 @@ export class GameScene extends Phaser.Scene {
   // ===================== WORLD =====================
   buildWorld() {
     const { x, y } = this.worldCenter;
-    // Ambient glow halo behind platform
+    // Ambient glow halo behind the atmosphere
     this.add.image(x, y, 'glow-cyan').setScale(2.4).setAlpha(0.3).setBlendMode(Phaser.BlendModes.ADD);
-    // Platform (ornate bronze frame + inner ocean). This rotates slowly.
-    const platform = this.add.image(x, y, 'world-platform').setScale(GameScene.PLATFORM_SCALE);
-    this.tweens.add({ targets: platform, angle: 360, duration: 220000, repeat: -1 });
-    // Continental world map — static layer above the rotating platform so the
-    // landmasses keep their orientation while the bronze rim spins.
+    // Planet atmosphere (troposphere → stratosphere → ozone halo) + inner ocean.
+    this.add.image(x, y, 'world-platform').setScale(GameScene.PLATFORM_SCALE);
+    // Continental world map — static layer above the atmosphere.
     this.add.image(x, y, 'world-continents').setScale(GameScene.PLATFORM_SCALE);
 
     // Place regions on the continent anchors

@@ -5,21 +5,11 @@ import { Settings } from '../state';
 import { spawnAmbientBubbles, spawnCometStreaks, spawnStarShimmer, ThemedButton } from '../ui/Components';
 
 export class MainMenuScene extends Phaser.Scene {
-  private rotatingPlanet?: Phaser.GameObjects.Container;
   constructor() { super('MainMenu'); }
 
   create() {
     // Background
     this.add.image(VW / 2, VH / 2, 'bg-stars').setDisplaySize(VW, VH);
-    // Animated planet silhouette behind menu
-    this.rotatingPlanet = this.add.container(VW / 2 - 350, VH / 2 + 30);
-    const planet = this.add.image(0, 0, 'world-platform').setScale(0.85).setAlpha(0.85);
-    this.rotatingPlanet.add(planet);
-    // glow halo
-    const glow = this.add.image(0, 0, 'glow-cyan').setScale(2.6).setAlpha(0.45).setBlendMode(Phaser.BlendModes.ADD);
-    this.rotatingPlanet.addAt(glow, 0);
-    this.tweens.add({ targets: planet, angle: 360, duration: 90000, repeat: -1 });
-    this.tweens.add({ targets: glow, alpha: 0.7, scale: 2.9, yoyo: true, duration: 4500, repeat: -1, ease: 'Sine.easeInOut' });
 
     // Drifting energy bubbles, shimmering stars, occasional comets.
     spawnStarShimmer(this, VW, VH);
@@ -36,11 +26,11 @@ export class MainMenuScene extends Phaser.Scene {
       stroke: '#000', strokeThickness: 2,
     }).setOrigin(0.5).setShadow(0, 2, '#000', 4, true, true);
 
-    // Menu buttons (lower-right corner) — panel & header removed, buttons kept in place.
-    const panelX = VW - 290, panelY = VH - 310;
-
-    const startY = panelY - 150;
+    // Menu buttons — centred vertically & horizontally below the title.
+    const panelX = VW / 2;
+    const panelY = VH / 2 + 40;
     const gap = 80;
+    const startY = panelY - gap * 1.5;
 
     new ThemedButton(this, {
       x: panelX, y: startY + gap * 0, text: 'Start Game',
