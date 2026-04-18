@@ -8,11 +8,13 @@ import { MACHINES, REGIONS, type MachineDef, type RegionState, type WorldState }
 import { createWorld, describeStat, isMachineReady, nextTurn, statColor } from '../sim/Simulation';
 import { Game, Settings } from '../state';
 import { spawnFloater, spawnRuneRing, StatMeter, ThemedButton } from '../ui/Components';
+import { getRegionLocalPolygon } from '../assets/textures';
+import { getRegionLocalPolygon } from '../assets/textures';
 
 interface RegionVisual {
   state: RegionState;
   container: Phaser.GameObjects.Container;
-  sprite: Phaser.GameObjects.Image;
+  sprite: Phaser.GameObjects.GameObject;
   label: Phaser.GameObjects.Text;
   machineMarkers: Phaser.GameObjects.Image[];
   ring: Phaser.GameObjects.Graphics;
@@ -133,40 +135,48 @@ export class GameScene extends Phaser.Scene {
     const { x, y } = this.worldCenter;
     // Ambient glow halo behind platform
     this.add.image(x, y, 'glow-cyan').setScale(2.4).setAlpha(0.3).setBlendMode(Phaser.BlendModes.ADD);
-    // Platform
+    // Platform (ornate bronze frame + inner ocean). This rotates slowly.
     const platform = this.add.image(x, y, 'world-platform').setScale(0.85);
-    // Slow rotation
     this.tweens.add({ targets: platform, angle: 360, duration: 220000, repeat: -1 });
+    // Continental world map — static layer above the rotating platform so the
+    // landmasses keep their orientation while the bronze rim spins.
+    this.add.image(x, y, 'world-continents').setScale(0.85);
 
-    // Place regions on the inner ocean
+    // Place regions on the continent anchors
     this.world.regions.forEach((r) => {
       const rd = REGIONS.find(rg => rg.id === r.id)!;
       const rx = x + rd.nx * this.worldRadius;
       const ry = y + rd.ny * this.worldRadius;
       const cont = this.add.container(rx, ry);
 
-      // Dark anchor disc behind the region for contrast on the globe
-      const discRadius = 34;
-      const disc = this.add.graphics();
-      disc.fillStyle(0x0b1622, 0.55);
-      disc.fillCircle(0, 0, discRadius);
-      disc.lineStyle(2, COLORS.bronzeLight, 0.65);
-      disc.strokeCircle(0, 0, discRadius);
-      cont.add(disc);
+      // Build a hit polygon that matches this region's continent shape exactly.
+      // displaySize = texture size (720) × platform scale (0.85); polygon
+      // points are in container-local space so they align with the continent
+      // art regardless of screen position.
+      const PLATFORM_DISPLAY = 720 * 0.85;
+      const polyPts = getRegionLocalPolygon(r.id, PLATFORM_DISPLAY, 1.05);
+      const hit = this.add.zone(0, 0, 1, 1);
+      cont.add(hit);
+      // Fallback to a circle if the polygon is empty (shouldn't happen).
+      const hitR = 75;
+      const polygon = polyPts.length
+        ? new Phaser.Geom.Polygon(polyPts.flatMap(p => [p.x, p.y]))
+        : null;
 
-      // Region sprite, smaller and centred on the disc
-      const sprite = this.add.image(0, 0, `region-${r.terrain}`).setScale(0.42);
-      sprite.setOrigin(0.5);
-      cont.add(sprite);
-
-      // selection ring
+      // Selection ring (hidden until selected)
       const ring = this.add.graphics();
-      ring.lineStyle(3, COLORS.gold, 0); // hidden
+      ring.lineStyle(3, COLORS.gold, 0);
       cont.add(ring);
 
-      // Label with a dark pill backdrop for readability
-      const labelY = discRadius + 14;
-      const label = this.add.text(0, labelY, r.name, {
+      // Hover highlight ring — drawn fresh on hover via a separate graphics
+      const hover = this.add.graphics();
+      cont.add(hover);
+
+      // Label, offset radially outward so it never sits on a neighbor continent.
+      const ang = Math.atan2(rd.ny, rd.nx);
+      const lx = Math.cos(ang) * 58;
+      const ly = Math.sin(ang) * 58;
+      const label = this.add.text(lx, ly, r.name, {
         fontFamily: FONTS.title, fontSize: '13px', color: HEX.goldBright,
         stroke: '#000', strokeThickness: 3,
       }).setOrigin(0.5);
@@ -174,30 +184,43 @@ export class GameScene extends Phaser.Scene {
       const pillW = label.width + pad * 2;
       const pillH = label.height + 4;
       const pill = this.add.graphics();
-      pill.fillStyle(0x0b1622, 0.75);
-      pill.fillRoundedRect(-pillW / 2, labelY - pillH / 2, pillW, pillH, 6);
-      pill.lineStyle(1, COLORS.bronzeLight, 0.5);
-      pill.strokeRoundedRect(-pillW / 2, labelY - pillH / 2, pillW, pillH, 6);
+      pill.fillStyle(0x0b1622, 0.78);
+      pill.fillRoundedRect(lx - pillW / 2, ly - pillH / 2, pillW, pillH, 6);
+      pill.lineStyle(1, COLORS.bronzeLight, 0.55);
+      pill.strokeRoundedRect(lx - pillW / 2, ly - pillH / 2, pillW, pillH, 6);
       cont.add(pill);
       cont.add(label);
 
-      // optional machine markers (visible structures embedded in nature)
+      // Optional machine marker pinned to continent centre
       const markers: Phaser.GameObjects.Image[] = [];
       if (Math.random() < 0.55) {
         const machineKey = ['rain', 'magma', 'bloom', 'wind', 'purifier', 'peace'][Math.floor(Math.random() * 6)];
-        const m = this.add.image(18, -14, `icon-${machineKey}`).setScale(0.35).setAlpha(0.9);
+        const m = this.add.image(0, -4, `icon-${machineKey}`).setScale(0.38).setAlpha(0.9);
         cont.add(m); markers.push(m);
       }
 
-      // Interaction
-      sprite.setInteractive({ useHandCursor: true });
-      sprite.on('pointerover', () => {
+      // Interaction (on the invisible hit zone)
+      if (polygon) {
+        hit.setInteractive(polygon, Phaser.Geom.Polygon.Contains);
+      } else {
+        hit.setInteractive(new Phaser.Geom.Circle(0, 0, hitR), Phaser.Geom.Circle.Contains);
+      }
+      if (hit.input) hit.input.cursor = 'pointer';
+      hit.on('pointerover', () => {
         if (!this.selectedMachine || this.selectedMachine.target === 'global') return;
-        cont.setScale(1.05);
+        hover.clear();
+        if (polygon) {
+          hover.lineStyle(2, COLORS.divine, 0.7);
+          hover.strokePoints(polygon.points, true);
+        } else {
+          hover.lineStyle(2, COLORS.divine, 0.7).strokeCircle(0, 0, hitR + 6);
+        }
         audio.hover();
       });
-      sprite.on('pointerout', () => { cont.setScale(1.0); });
-      sprite.on('pointerup', () => {
+      hit.on('pointerout', () => {
+        hover.clear();
+      });
+      hit.on('pointerup', () => {
         if (!this.selectedMachine) {
           this.toast('Choose a machine first.');
           return;
@@ -209,18 +232,38 @@ export class GameScene extends Phaser.Scene {
         this.selectRegion(r);
       });
 
-      this.regionVisuals.push({ state: r, container: cont, sprite, label, machineMarkers: markers, ring, flagIcon: null });
+      this.regionVisuals.push({
+        state: r,
+        container: cont,
+        sprite: hit,
+        label,
+        machineMarkers: markers,
+        ring,
+        flagIcon: null,
+      });
     });
   }
 
   selectRegion(r: RegionState) {
     this.selectedRegion = r;
     audio.select();
+    const PLATFORM_DISPLAY = 720 * 0.85;
     this.regionVisuals.forEach(rv => {
       rv.ring.clear();
       if (rv.state === r) {
-        rv.ring.lineStyle(3, COLORS.gold, 1).strokeCircle(0, 0, 42);
-        rv.ring.lineStyle(1, COLORS.divine, 0.7).strokeCircle(0, 0, 50);
+        const pts = getRegionLocalPolygon(rv.state.id, PLATFORM_DISPLAY, 1.05);
+        if (pts.length) {
+          const poly = new Phaser.Geom.Polygon(pts.flatMap(p => [p.x, p.y]));
+          rv.ring.lineStyle(3, COLORS.gold, 1);
+          rv.ring.strokePoints(poly.points, true);
+          rv.ring.lineStyle(1, COLORS.divine, 0.7);
+          const pts2 = getRegionLocalPolygon(rv.state.id, PLATFORM_DISPLAY, 1.12);
+          const poly2 = new Phaser.Geom.Polygon(pts2.flatMap(p => [p.x, p.y]));
+          rv.ring.strokePoints(poly2.points, true);
+        } else {
+          rv.ring.lineStyle(3, COLORS.gold, 1).strokeCircle(0, 0, 80);
+          rv.ring.lineStyle(1, COLORS.divine, 0.7).strokeCircle(0, 0, 88);
+        }
         spawnRuneRing(this, rv.container.x, rv.container.y, COLORS.gold);
       }
     });
@@ -538,13 +581,19 @@ export class GameScene extends Phaser.Scene {
     else if (this.world.era >= this.world.totalEras - 3) this.objectiveText.setText(`Final eras! Hold harmony above 50% by Era ${this.world.totalEras}.`);
     else this.objectiveText.setText('Keep harmony above 50% until Era ' + this.world.totalEras + '.');
 
-    // Region tints based on health
+    // Region stress overlay — subtle warm/red tint drawn over the continent
     this.regionVisuals.forEach(rv => {
       const r = rv.state;
       const stress = (r.pollution + (100 - r.flora) * 0.5 + Math.abs(r.temperature - 50)) / 3;
-      if (stress > 60) rv.sprite.setTint(0xff8866);
-      else if (stress > 40) rv.sprite.setTint(0xddccaa);
-      else rv.sprite.clearTint();
+      const overlay = (rv as any)._stressOverlay as Phaser.GameObjects.Graphics | undefined;
+      if (overlay) overlay.clear();
+      const g = overlay ?? this.add.graphics();
+      if (!overlay) {
+        rv.container.addAt(g, 0);
+        (rv as any)._stressOverlay = g;
+      }
+      if (stress > 60) { g.fillStyle(0xff5533, 0.22).fillCircle(0, 0, 72); }
+      else if (stress > 40) { g.fillStyle(0xddbb66, 0.15).fillCircle(0, 0, 72); }
       // flag icon
       if (rv.flagIcon) { rv.flagIcon.destroy(); rv.flagIcon = null; }
       if (r.flag) {
