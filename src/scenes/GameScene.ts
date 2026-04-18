@@ -9,7 +9,6 @@ import { createWorld, describeStat, isMachineReady, nextTurn, statColor } from '
 import { Game, Settings } from '../state';
 import { spawnFloater, spawnRuneRing, StatMeter, ThemedButton } from '../ui/Components';
 import { getRegionLocalPolygon } from '../assets/textures';
-import { getRegionLocalPolygon } from '../assets/textures';
 
 interface RegionVisual {
   state: RegionState;
@@ -37,8 +36,14 @@ export class GameScene extends Phaser.Scene {
   statMeters: Record<string, StatMeter> = {};
   statValues: Record<string, Phaser.GameObjects.Text> = {};
   // center
-  worldCenter = { x: 800, y: 540 };
-  worldRadius = 210;
+  // Planet is rendered by scaling the 720px `world-platform` texture.
+  // platformScale controls the visible size; worldRadius is derived from it
+  // so region placement always matches the texture's placement radius (0.345).
+  static readonly PLATFORM_SIZE = 720;
+  static readonly PLATFORM_SCALE = 1.05;
+  static readonly PLATFORM_DISPLAY = GameScene.PLATFORM_SIZE * GameScene.PLATFORM_SCALE;
+  worldCenter = { x: 800, y: 510 };
+  worldRadius = GameScene.PLATFORM_DISPLAY * 0.345;
   regionVisuals: RegionVisual[] = [];
   selectedRegion: RegionState | null = null;
   bannerText!: Phaser.GameObjects.Text;
@@ -136,11 +141,11 @@ export class GameScene extends Phaser.Scene {
     // Ambient glow halo behind platform
     this.add.image(x, y, 'glow-cyan').setScale(2.4).setAlpha(0.3).setBlendMode(Phaser.BlendModes.ADD);
     // Platform (ornate bronze frame + inner ocean). This rotates slowly.
-    const platform = this.add.image(x, y, 'world-platform').setScale(0.85);
+    const platform = this.add.image(x, y, 'world-platform').setScale(GameScene.PLATFORM_SCALE);
     this.tweens.add({ targets: platform, angle: 360, duration: 220000, repeat: -1 });
     // Continental world map — static layer above the rotating platform so the
     // landmasses keep their orientation while the bronze rim spins.
-    this.add.image(x, y, 'world-continents').setScale(0.85);
+    this.add.image(x, y, 'world-continents').setScale(GameScene.PLATFORM_SCALE);
 
     // Place regions on the continent anchors
     this.world.regions.forEach((r) => {
@@ -150,11 +155,11 @@ export class GameScene extends Phaser.Scene {
       const cont = this.add.container(rx, ry);
 
       // Build a hit polygon that matches this region's continent shape exactly.
-      // displaySize = texture size (720) × platform scale (0.85); polygon
-      // points are in container-local space so they align with the continent
-      // art regardless of screen position.
-      const PLATFORM_DISPLAY = 720 * 0.85;
-      const polyPts = getRegionLocalPolygon(r.id, PLATFORM_DISPLAY, 1.05);
+      // `PLATFORM_DISPLAY` is the rendered texture diameter; polygon points are
+      // in container-local space so they align with the continent art
+      // regardless of screen position. Points are clamped to the ocean disc
+      // inside `getRegionLocalPolygon`, so hit zones never exceed the planet.
+      const polyPts = getRegionLocalPolygon(r.id, GameScene.PLATFORM_DISPLAY, 1.02);
       const hit = this.add.zone(0, 0, 1, 1);
       cont.add(hit);
       // Fallback to a circle if the polygon is empty (shouldn't happen).
@@ -247,17 +252,16 @@ export class GameScene extends Phaser.Scene {
   selectRegion(r: RegionState) {
     this.selectedRegion = r;
     audio.select();
-    const PLATFORM_DISPLAY = 720 * 0.85;
     this.regionVisuals.forEach(rv => {
       rv.ring.clear();
       if (rv.state === r) {
-        const pts = getRegionLocalPolygon(rv.state.id, PLATFORM_DISPLAY, 1.05);
+        const pts = getRegionLocalPolygon(rv.state.id, GameScene.PLATFORM_DISPLAY, 1.02);
         if (pts.length) {
           const poly = new Phaser.Geom.Polygon(pts.flatMap(p => [p.x, p.y]));
           rv.ring.lineStyle(3, COLORS.gold, 1);
           rv.ring.strokePoints(poly.points, true);
           rv.ring.lineStyle(1, COLORS.divine, 0.7);
-          const pts2 = getRegionLocalPolygon(rv.state.id, PLATFORM_DISPLAY, 1.12);
+          const pts2 = getRegionLocalPolygon(rv.state.id, GameScene.PLATFORM_DISPLAY, 1.08);
           const poly2 = new Phaser.Geom.Polygon(pts2.flatMap(p => [p.x, p.y]));
           rv.ring.strokePoints(poly2.points, true);
         } else {

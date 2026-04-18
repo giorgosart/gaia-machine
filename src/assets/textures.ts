@@ -392,15 +392,54 @@ export function makeWorldPlatform(scene: Phaser.Scene, key: string, size: number
 // a matching hit polygon for each region.
 export type ContinentLayout = { id: string; terrain: Terrain; nx: number; ny: number; baseR: number };
 export const CONTINENT_LAYOUT: ContinentLayout[] = [
-  { id: 'north_wilds', terrain: 'tundra',   nx:  0.00, ny: -0.78, baseR: 0.18 },
-  { id: 'iron_peaks',  terrain: 'mountain', nx:  0.62, ny: -0.50, baseR: 0.17 },
-  { id: 'sunlands',    terrain: 'desert',   nx:  0.80, ny:  0.10, baseR: 0.17 },
-  { id: 'verdant',     terrain: 'forest',   nx:  0.45, ny:  0.62, baseR: 0.17 },
-  { id: 'lowlands',    terrain: 'plains',   nx: -0.10, ny:  0.78, baseR: 0.18 },
-  { id: 'green_isle',  terrain: 'jungle',   nx: -0.62, ny:  0.50, baseR: 0.15 },
-  { id: 'ashen',       terrain: 'volcanic', nx: -0.82, ny: -0.05, baseR: 0.16 },
-  { id: 'deep_sea',    terrain: 'water',    nx: -0.40, ny: -0.62, baseR: 0.18 },
+  // Broad polar cap — elongated east-west, sits high on the globe.
+  { id: 'north_wilds', terrain: 'tundra',   nx:  0.02, ny: -0.74, baseR: 0.12 },
+  // Tilted highland belt tapering north-east.
+  { id: 'iron_peaks',  terrain: 'mountain', nx:  0.60, ny: -0.42, baseR: 0.11 },
+  // Broad arid continental arc along the eastern flank.
+  { id: 'sunlands',    terrain: 'desert',   nx:  0.72, ny:  0.18, baseR: 0.12 },
+  // Lush forested interior, broad and slightly tilted.
+  { id: 'verdant',     terrain: 'forest',   nx:  0.38, ny:  0.60, baseR: 0.11 },
+  // Wide fertile basin across the southern latitudes.
+  { id: 'lowlands',    terrain: 'plains',   nx: -0.15, ny:  0.72, baseR: 0.12 },
+  // Coastal archipelago / small jungle landmass to the south-west.
+  { id: 'green_isle',  terrain: 'jungle',   nx: -0.62, ny:  0.42, baseR: 0.08 },
+  // Fractured volcanic territory on the western shelf.
+  { id: 'ashen',       terrain: 'volcanic', nx: -0.78, ny: -0.10, baseR: 0.10 },
+  // Abyssal marine zone at the globe's heart, surrounded by landmasses.
+  { id: 'deep_sea',    terrain: 'water',    nx:  0.00, ny:  0.00, baseR: 0.11 },
 ];
+
+// Per-region silhouette character. Drives aspect, rotation, coastline
+// jaggedness, and directional bay so each continent feels geographically
+// distinct rather than a rounded token.
+type ShapeDef = {
+  aspectX: number;   // horizontal stretch
+  aspectY: number;   // vertical stretch
+  rot: number;       // rotation (radians)
+  jag: number;       // coastline roughness, 0..1
+  bayDir: number;    // angle (radians) of a pronounced inlet/bay
+  bayDepth: number;  // how deep that inlet carves, 0..0.4
+};
+
+const SHAPE_DEFS: Record<string, ShapeDef> = {
+  // Broad polar landmass, gently rugged, with a southward sea-facing coast.
+  north_wilds: { aspectX: 1.55, aspectY: 0.70, rot:  0.05, jag: 0.55, bayDir:  Math.PI * 0.5,  bayDepth: 0.18 },
+  // Tilted highland spine — elongated, angular coastlines.
+  iron_peaks:  { aspectX: 1.20, aspectY: 0.90, rot: -0.50, jag: 0.70, bayDir:  Math.PI * 1.7,  bayDepth: 0.22 },
+  // Long arid continental belt with a smoother inland arc.
+  sunlands:    { aspectX: 1.40, aspectY: 1.00, rot:  0.20, jag: 0.40, bayDir:  Math.PI * 1.0,  bayDepth: 0.20 },
+  // Broad forested interior tapering south.
+  verdant:     { aspectX: 1.30, aspectY: 1.00, rot: -0.15, jag: 0.55, bayDir:  Math.PI * 0.25, bayDepth: 0.16 },
+  // Wide basin — elongated east-west, river-carved coasts.
+  lowlands:    { aspectX: 1.60, aspectY: 0.75, rot:  0.08, jag: 0.45, bayDir: -Math.PI * 0.5,  bayDepth: 0.18 },
+  // Small irregular island group — very jagged silhouette.
+  green_isle:  { aspectX: 1.10, aspectY: 0.95, rot:  0.35, jag: 0.90, bayDir:  Math.PI * 1.2,  bayDepth: 0.26 },
+  // Fractured volcanic coastline, tall and broken.
+  ashen:       { aspectX: 0.95, aspectY: 1.30, rot:  0.35, jag: 0.95, bayDir:  Math.PI * 0.0,  bayDepth: 0.24 },
+  // Marine zone — soft irregular basin shape (used only for hit area).
+  deep_sea:    { aspectX: 1.20, aspectY: 0.95, rot:  0.10, jag: 0.35, bayDir:  Math.PI * 1.5,  bayDepth: 0.14 },
+};
 
 // Stable hash-based pseudo-random so the map shape is identical across runs.
 function continentRand(seed: string, i: number): number {
@@ -410,29 +449,76 @@ function continentRand(seed: string, i: number): number {
   return ((h >>> 0) % 10000) / 10000;
 }
 
-// Point count for each continent outline. Higher = smoother.
-const CONTINENT_POINTS = 22;
+// Point count for each continent outline. Higher = smoother macro curve
+// with more coastal micro-detail.
+const CONTINENT_POINTS = 48;
 
 /**
  * Returns the continent polygon in container-local space (relative to the
  * region's container position). `displaySize` is the rendered diameter of the
  * world-continents texture (e.g. 720 * 0.85 platformScale). `inflate` pads the
  * hit area slightly beyond the visible coastline.
+ *
+ * Shape is built from:
+ *   - an elliptical base (aspectX, aspectY, rotation)
+ *   - three sine/cosine harmonics for multi-scale coastline variation
+ *   - a directional Gaussian inlet for a pronounced bay / strait
+ * so every region gets an asymmetrical, continent-like silhouette rather
+ * than a rounded blob.
  */
 export function getRegionLocalPolygon(id: string, displaySize: number, inflate = 1): { x: number; y: number }[] {
   const L = CONTINENT_LAYOUT.find(l => l.id === id);
   if (!L) return [];
-  // In the texture-space generator, R = textureSize * baseR. Since we output
-  // container-local coords (relative to continent center) and apply the same
-  // scale the displayed image uses, R_local = displaySize * baseR * inflate.
+  const S = SHAPE_DEFS[id] ?? { aspectX: 1, aspectY: 1, rot: 0, jag: 0.5, bayDir: 0, bayDepth: 0 };
   const R = displaySize * L.baseR * inflate;
+  const N = CONTINENT_POINTS;
+  const s0 = continentRand(L.id, 1) * Math.PI * 2;
+  const s1 = continentRand(L.id, 2) * Math.PI * 2;
+  const s2 = continentRand(L.id, 3) * Math.PI * 2;
+  const s3 = continentRand(L.id, 4) * Math.PI * 2;
+  const jag = S.jag;
+  const amp1 = 0.14 + 0.10 * jag;            // macro bays/capes
+  const amp2 = 0.06 + 0.10 * jag;            // mid-scale inlets
+  const amp3 = 0.02 + 0.08 * jag;            // small coastal detail
+  const cs = Math.cos(S.rot), sn = Math.sin(S.rot);
+  // Planet-disc clamp: continent centre offset (globe-centre-relative) and
+  // maximum allowed distance from the globe centre. Coastline points that
+  // stray outside the ocean disc are projected back to the planet's rim, so
+  // the hit polygon matches the visibly-clipped landmass.
+  const planetEdge = displaySize * 0.42;
+  const offX = L.nx * displaySize * 0.345;
+  const offY = L.ny * displaySize * 0.345;
   const pts: { x: number; y: number }[] = [];
-  for (let i = 0; i < CONTINENT_POINTS; i++) {
-    const a = (i / CONTINENT_POINTS) * Math.PI * 2;
-    const low  = 0.82 + 0.30 * Math.sin(a * 2 + continentRand(L.id, 0) * 6.28);
-    const high = 0.92 + 0.20 * (continentRand(L.id, i + 1) - 0.5);
-    const rr = R * low * high;
-    pts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr * 0.92 });
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    // Multi-octave coastline noise — gives natural, non-repeating variation.
+    let rr = 1.0
+      + amp1 * Math.sin(a * 1 + s0)
+      + amp1 * 0.55 * Math.cos(a * 2 + s1)
+      + amp2 * Math.sin(a * 3 + s2)
+      + amp2 * 0.5  * Math.cos(a * 5 + s3)
+      + amp3 * Math.sin(a * 8 + s0 * 0.5);
+    // Directional inlet — a single smooth bay that carves one coast.
+    const d = Math.cos(a - S.bayDir);
+    if (d > 0) rr -= S.bayDepth * Math.pow(d, 3);
+    // Clamp so the polygon never crosses itself.
+    rr = Math.max(0.55, rr);
+    // Elliptical base, then rotate.
+    const px = Math.cos(a) * rr * S.aspectX;
+    const py = Math.sin(a) * rr * S.aspectY;
+    const rx = px * cs - py * sn;
+    const ry = px * sn + py * cs;
+    let lx = rx * R;
+    let ly = ry * R;
+    // Clamp to the planet's ocean disc so coastlines never extend past the rim.
+    const gx = offX + lx, gy = offY + ly;
+    const dist = Math.hypot(gx, gy);
+    if (dist > planetEdge) {
+      const sc = planetEdge / dist;
+      lx = gx * sc - offX;
+      ly = gy * sc - offY;
+    }
+    pts.push({ x: lx, y: ly });
   }
   return pts;
 }
@@ -459,25 +545,23 @@ export function makeWorldContinents(scene: Phaser.Scene, key: string, size: numb
 
   const rand = continentRand;
 
+  // Build continent Path2D from the shared polygon generator so texture
+  // rendering and hit-zone detection stay in perfect sync.
   const continentPath = (L: Layout, inflate = 1): Path2D => {
     const x = cx + L.nx * placeR;
     const y = cy + L.ny * placeR;
-    const R = size * L.baseR * inflate;
-    const pts: { x: number; y: number }[] = [];
-    const N = CONTINENT_POINTS;
-    for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2;
-      const low  = 0.82 + 0.30 * Math.sin(a * 2 + rand(L.id, 0) * 6.28);
-      const high = 0.92 + 0.20 * (rand(L.id, i + 1) - 0.5);
-      const rr = R * low * high;
-      pts.push({ x: x + Math.cos(a) * rr, y: y + Math.sin(a) * rr * 0.92 });
-    }
+    // In texture space, displaySize === size (no platform scale applied).
+    const local = getRegionLocalPolygon(L.id, size, inflate);
     const path = new Path2D();
-    path.moveTo((pts[pts.length - 1].x + pts[0].x) / 2, (pts[pts.length - 1].y + pts[0].y) / 2);
+    const N = local.length;
+    // Smooth closed curve through the computed polygon points (quadratic
+    // mid-point interpolation keeps coastlines naturally curved).
+    const first = local[0], last = local[N - 1];
+    path.moveTo(x + (last.x + first.x) / 2, y + (last.y + first.y) / 2);
     for (let i = 0; i < N; i++) {
-      const p1 = pts[i], p2 = pts[(i + 1) % N];
+      const p1 = local[i], p2 = local[(i + 1) % N];
       const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
-      path.quadraticCurveTo(p1.x, p1.y, mx, my);
+      path.quadraticCurveTo(x + p1.x, y + p1.y, x + mx, y + my);
     }
     path.closePath();
     return path;
@@ -571,6 +655,39 @@ export function makeWorldContinents(scene: Phaser.Scene, key: string, size: numb
     ctx.stroke(path);
     ctx.restore();
   });
+
+  // 2b) Scattered sub-islands near the jungle archipelago so Emerald Isles
+  // reads as a coastal island group rather than a single patch.
+  {
+    const isle = lands.find(l => l.id === 'green_isle');
+    if (isle) {
+      const ix = cx + isle.nx * placeR;
+      const iy = cy + isle.ny * placeR;
+      const bm = biome.jungle;
+      for (let i = 0; i < 6; i++) {
+        const a = rand(isle.id, i + 50) * Math.PI * 2;
+        const d = size * (0.06 + rand(isle.id, i + 60) * 0.05);
+        const sx = ix + Math.cos(a) * d;
+        const sy = iy + Math.sin(a) * d;
+        const sr = size * (0.012 + rand(isle.id, i + 70) * 0.018);
+        // island halo
+        ctx.save();
+        ctx.fillStyle = 'rgba(120,180,220,0.22)';
+        ctx.filter = 'blur(4px)';
+        ctx.beginPath(); ctx.ellipse(sx, sy, sr * 1.6, sr * 1.2, rand(isle.id, i + 80) * Math.PI, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        // island body
+        const g2 = ctx.createRadialGradient(sx - sr * 0.3, sy - sr * 0.3, 0, sx, sy, sr);
+        g2.addColorStop(0, bm.light);
+        g2.addColorStop(1, bm.dark);
+        ctx.fillStyle = g2;
+        ctx.beginPath(); ctx.ellipse(sx, sy, sr, sr * 0.75, rand(isle.id, i + 90) * Math.PI, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(10,18,30,0.45)';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
+    }
+  }
 
   // 3) Faint cartographer grid for old-map feel
   ctx.save();
