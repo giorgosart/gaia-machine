@@ -600,6 +600,7 @@ export function generateAllAssets(scene: Phaser.Scene) {
   makePanelTexture(scene, 'panel-objective', 360, 240);
   makePanelTexture(scene, 'panel-banner', 700, 80);
   makePanelTexture(scene, 'panel-bottom', 1100, 200);
+  makePanelTexture(scene, 'panel-machines', 340, 560);
   makePanelTexture(scene, 'panel-trend', 320, 110);
   makePanelTexture(scene, 'panel-modal', 1000, 600);
   makePanelTexture(scene, 'panel-menu', 520, 560);

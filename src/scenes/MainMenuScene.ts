@@ -26,22 +26,17 @@ export class MainMenuScene extends Phaser.Scene {
     this.spawnParticles();
 
     // Title logo
-    const logo = this.add.image(VW / 2, 170, 'title-logo').setScale(1.0);
-    this.tweens.add({ targets: logo, y: 175, yoyo: true, duration: 3500, repeat: -1, ease: 'Sine.easeInOut' });
+    const logo = this.add.image(VW / 2, 110, 'title-logo').setScale(1.0);
+    this.tweens.add({ targets: logo, y: 115, yoyo: true, duration: 3500, repeat: -1, ease: 'Sine.easeInOut' });
 
     // Tagline
-    this.add.text(VW / 2, 270, 'Tend the Living Machine of Earth', {
+    this.add.text(VW / 2, 185, 'Tend the Living Machine of Earth', {
       fontFamily: FONTS.title, fontSize: '26px', color: HEX.bronzeLight,
       stroke: '#000', strokeThickness: 2,
     }).setOrigin(0.5).setShadow(0, 2, '#000', 4, true, true);
 
-    // Menu panel
-    const panelX = VW / 2 + 350, panelY = VH / 2 + 40;
-    this.add.image(panelX, panelY, 'panel-menu');
-    this.add.text(panelX, panelY - 230, 'OBSERVATORY', {
-      fontFamily: FONTS.title, fontSize: '24px', color: HEX.gold, stroke: '#000', strokeThickness: 3,
-      letterSpacing: 4 as any,
-    }).setOrigin(0.5);
+    // Menu buttons (lower-right corner) — panel & header removed, buttons kept in place.
+    const panelX = VW - 290, panelY = VH - 310;
 
     const startY = panelY - 150;
     const gap = 80;
@@ -72,11 +67,6 @@ export class MainMenuScene extends Phaser.Scene {
     audio.setSfxEnabled(Settings.sfx);
     audio.duck(1);
     audio.playMusic('menu');
-
-    // Footer hint
-    this.add.text(VW / 2, VH - 30, 'Click to begin · Press ESC in-game to pause', {
-      fontFamily: FONTS.ui, fontSize: '14px', color: HEX.textDim,
-    }).setOrigin(0.5);
   }
 
   private makeAudioToggles() {

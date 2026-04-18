@@ -77,7 +77,6 @@ export class GameScene extends Phaser.Scene {
     this.buildSidePanels();
     this.buildBottomBar();
     this.buildTrends();
-    this.buildPauseButton();
 
     // Initial UI sync
     this.refreshAll();
@@ -107,9 +106,13 @@ export class GameScene extends Phaser.Scene {
   buildTopBar() {
     const labels = ['climate', 'nature', 'humans', 'tectonics', 'pollution'] as const;
     const titles = ['CLIMATE', 'NATURE', 'HUMANS', 'TECTONICS', 'POLLUTION'];
-    const startX = 60, gap = 250, y = 80;
+    const panelWidth = 240;
+    const gap = 10;
+    const totalWidth = labels.length * panelWidth + (labels.length - 1) * gap;
+    const startX = (VW - totalWidth) / 2;
+    const y = 60;
     labels.forEach((k, i) => {
-      const x = startX + i * gap + 120;
+      const x = startX + i * (panelWidth + gap) + panelWidth / 2;
       this.add.image(x, y, 'panel-stat');
       this.add.image(x - 90, y - 18, `icon-${k}`).setScale(0.7);
       this.add.text(x - 50, y - 30, titles[i], {
@@ -203,7 +206,7 @@ export class GameScene extends Phaser.Scene {
 
   // ===================== EVENT BANNER =====================
   buildEventBanner() {
-    const x = VW / 2, y = 175;
+    const x = VW / 2, y = 150;
     this.bannerContainer = this.add.container(x, y);
     const banner = this.add.image(0, 0, 'banner-shape').setScale(1.0);
     this.bannerContainer.add(banner);
@@ -224,21 +227,7 @@ export class GameScene extends Phaser.Scene {
 
   // ===================== SIDE PANELS =====================
   buildSidePanels() {
-    // LEFT: Event panel
-    const lx = 220, ly = 360;
-    this.add.image(lx, ly, 'panel-event');
-    this.add.text(lx, ly - 90, 'CURRENT EVENT', { fontFamily: FONTS.title, fontSize: '16px', color: HEX.gold, letterSpacing: 3 as any }).setOrigin(0.5);
-    this.eventIcon = this.add.image(lx - 130, ly - 30, 'icon-climate').setScale(0.7);
-    this.eventTitle = this.add.text(lx - 90, ly - 50, 'Awakening', {
-      fontFamily: FONTS.title, fontSize: '20px', color: HEX.bronzeLight,
-    }).setOrigin(0, 0);
-    this.eventDesc = this.add.text(lx - 145, ly - 5, 'A still world hums with potential. Choose a machine and act.', {
-      fontFamily: FONTS.ui, fontSize: '15px', color: HEX.text,
-      wordWrap: { width: 290 }, lineSpacing: 3,
-    }).setOrigin(0, 0);
-
-    // RIGHT: Objective panel
-    const rx = VW - 220, ry = 360;
+    const rx = VW - 200, ry = 240;
     this.add.image(rx, ry, 'panel-objective');
     this.add.text(rx, ry - 100, 'PLANETARY HARMONY', { fontFamily: FONTS.title, fontSize: '16px', color: HEX.gold, letterSpacing: 3 as any }).setOrigin(0.5);
     this.eraText = this.add.text(rx, ry - 65, 'Era 1 / 20', {
@@ -253,24 +242,45 @@ export class GameScene extends Phaser.Scene {
       fontFamily: FONTS.ui, fontSize: '14px', color: HEX.text, align: 'center',
       wordWrap: { width: 300 }, lineSpacing: 3,
     }).setOrigin(0.5, 0);
+
+    // RIGHT (bottom): Event panel — directly underneath harmony.
+    const lx = rx, ly = ry + 240;
+    this.add.image(lx, ly, 'panel-event');
+    this.add.text(lx, ly - 90, 'CURRENT EVENT', { fontFamily: FONTS.title, fontSize: '16px', color: HEX.gold, letterSpacing: 3 as any }).setOrigin(0.5);
+    this.eventIcon = this.add.image(lx - 130, ly - 30, 'icon-climate').setScale(0.7);
+    this.eventTitle = this.add.text(lx - 90, ly - 50, 'Awakening', {
+      fontFamily: FONTS.title, fontSize: '20px', color: HEX.bronzeLight,
+    }).setOrigin(0, 0);
+    this.eventDesc = this.add.text(lx - 145, ly - 5, 'A still world hums with potential. Choose a machine and act.', {
+      fontFamily: FONTS.ui, fontSize: '15px', color: HEX.text,
+      wordWrap: { width: 290 }, lineSpacing: 3,
+    }).setOrigin(0, 0);
   }
 
-  // ===================== BOTTOM MACHINE BAR =====================
+  // ===================== LEFT MACHINE COLUMN =====================
   buildBottomBar() {
-    const y = VH - 130;
-    const x = VW / 2;
-    this.add.image(x, y, 'panel-bottom');
-    this.add.text(x - 530, y - 80, 'CHOOSE A MACHINE', {
+    // Left-side vertical panel: 2 columns x 3 rows of machine cards.
+    const panelX = 200, panelY = 480;
+    const panelHalfH = 280;  // panel-machines is 560 tall
+    this.add.image(panelX, panelY, 'panel-machines');
+    this.add.text(panelX, panelY - panelHalfH + 28, 'CHOOSE A MACHINE', {
       fontFamily: FONTS.title, fontSize: '18px', color: HEX.gold, letterSpacing: 3 as any,
-    }).setOrigin(0, 0.5);
+    }).setOrigin(0.5);
 
-    const cardW = 130, gap = 16;
     const cards = MACHINES;
-    const totalW = cards.length * cardW + (cards.length - 1) * gap;
-    const startX = x - totalW / 2 + cardW / 2 - 100;
+    const cols = 2;
+    const colGap = 10;
+    const rowGap = 15;
+    const cardW = 133, cardH = 125; // card-idle scaled 0.78
+    const gridW = cols * cardW + (cols - 1) * colGap;
+    const firstColX = panelX - gridW / 2 + cardW / 2;
+    const rows = Math.ceil(cards.length / cols);
+    const gridTop = panelY - panelHalfH + 70; // below title
     cards.forEach((m, i) => {
-      const cx = startX + i * (cardW + gap);
-      const cy = y - 5;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const cx = firstColX + col * (cardW + colGap);
+      const cy = gridTop + cardH / 2 + row * (cardH + rowGap);
       const cont = this.add.container(cx, cy);
       const bg = this.add.image(0, 0, 'card-idle').setScale(0.78);
       cont.add(bg);
@@ -282,7 +292,7 @@ export class GameScene extends Phaser.Scene {
         wordWrap: { width: 110 },
       }).setOrigin(0.5, 0);
       cont.add(label);
-      const short = this.add.text(0, 50, m.short, {
+      const short = this.add.text(0, 50, '', {
         fontFamily: FONTS.ui, fontSize: '11px', color: HEX.text, align: 'center',
         wordWrap: { width: 110 },
       }).setOrigin(0.5, 0);
@@ -307,9 +317,10 @@ export class GameScene extends Phaser.Scene {
       this.machineCards.push({ def: m, container: cont, bg, icon, label, short, cooldownTxt });
     });
 
-    // Confirm button (right of cards)
+    // Confirm button — bottom of the column, inside panel bounds.
+    const confirmY = gridTop + rows * cardH + (rows - 1) * rowGap + 50;
     this.confirmBtn = new ThemedButton(this, {
-      x: x + 480, y: y - 5, text: 'Confirm', textureKey: 'btn-confirm',
+      x: panelX, y: confirmY, text: 'Confirm', textureKey: 'btn-small',
       enabled: false,
       onClick: () => this.confirmAction(),
     });
@@ -388,16 +399,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ===================== PAUSE BTN =====================
-  buildPauseButton() {
-    const btn = new ThemedButton(this, {
-      x: 80, y: VH - 40, text: '❚❚ Pause', textureKey: 'btn-small',
-      onClick: () => this.openPause(),
-    });
-    btn.setScale(0.85);
-    this.add.text(VW - 80, VH - 40, 'ESC pauses · ENTER confirms', { fontFamily: FONTS.ui, fontSize: '12px', color: HEX.textDim }).setOrigin(1, 0.5);
-  }
-
+  // ===================== PAUSE =====================
   openPause() {
     if (this.busy) return;
     this.scene.launch('Pause', { from: 'Game' });
@@ -540,7 +542,7 @@ export class GameScene extends Phaser.Scene {
         c.short.setText(`Unlocks Era ${c.def.unlockEra}`);
       } else {
         c.label.setColor(HEX.goldBright);
-        c.short.setText(c.def.short);
+        c.short.setText('');
       }
     });
 
