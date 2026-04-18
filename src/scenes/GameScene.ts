@@ -7,7 +7,7 @@ import { COLORS, FONTS, HEX, VH, VW } from '../config';
 import { MACHINES, REGIONS, type MachineDef, type RegionState, type WorldState } from '../data/data';
 import { createWorld, describeStat, isMachineReady, nextTurn, statColor } from '../sim/Simulation';
 import { Game, Settings } from '../state';
-import { spawnFloater, spawnRuneRing, StatMeter, ThemedButton } from '../ui/Components';
+import { spawnAmbientBubbles, spawnCometStreaks, spawnFloater, spawnRuneRing, spawnStarShimmer, StatMeter, ThemedButton } from '../ui/Components';
 import { getRegionLocalPolygon } from '../assets/textures';
 
 interface RegionVisual {
@@ -77,6 +77,11 @@ export class GameScene extends Phaser.Scene {
     const vg = this.add.graphics();
     vg.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.0, 0.0, 0.7, 0.7);
     vg.fillRect(0, 0, VW, VH);
+
+    // Ambient atmosphere: shimmering stars, drifting energy bubbles, comets.
+    spawnStarShimmer(this, VW, VH);
+    spawnAmbientBubbles(this, VW, VH);
+    spawnCometStreaks(this, VW, VH);
 
     this.buildTopBar();
     this.buildWorld();

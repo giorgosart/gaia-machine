@@ -136,3 +136,134 @@ export function spawnRuneRing(scene: Phaser.Scene, x: number, y: number, color =
     onComplete: () => g.destroy(),
   });
 }
+
+// --------------------- Ambient background effects ----------------------
+// Shared celestial atmosphere: drifting energy bubbles, shimmering stars,
+// and the occasional streaking comet. Used by MainMenu and Game scenes so
+// the world feels alive in both.
+
+/**
+ * Drifting upward "energy bubbles" — soft additive glows that rise and fade.
+ * Returns the group so callers can destroy or depth-sort if needed.
+ */
+export function spawnAmbientBubbles(
+  scene: Phaser.Scene,
+  w: number,
+  h: number,
+  count = 30,
+): Phaser.GameObjects.Image[] {
+  const bubbles: Phaser.GameObjects.Image[] = [];
+  for (let i = 0; i < count; i++) {
+    const p = scene.add.image(Math.random() * w, Math.random() * h, 'glow-cyan')
+      .setScale(0.05 + Math.random() * 0.08)
+      .setAlpha(0.05 + Math.random() * 0.15)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: p,
+      y: p.y - 200 - Math.random() * 200,
+      x: p.x + (Math.random() - 0.5) * 100,
+      alpha: 0,
+      duration: 8000 + Math.random() * 6000,
+      repeat: -1,
+      repeatDelay: Math.random() * 3000,
+      onRepeat: () => { p.x = Math.random() * w; p.y = h + 50; p.alpha = 0.15; },
+    });
+    bubbles.push(p);
+  }
+  return bubbles;
+}
+
+/**
+ * Overlay a sparse layer of twinkling stars on top of the static starfield.
+ * Stars gently pulse in brightness to give the background a living shimmer
+ * without redrawing the main texture.
+ */
+export function spawnStarShimmer(
+  scene: Phaser.Scene,
+  w: number,
+  h: number,
+  count = 120,
+): void {
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * w;
+    const y = Math.random() * h;
+    const r = 1.4 + Math.random() * 2.2;
+    const star = scene.add.circle(x, y, r, 0xffffff, 1)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: star,
+      alpha: 0.15 + Math.random() * 0.25,
+      scale: 0.5 + Math.random() * 0.4,
+      duration: 900 + Math.random() * 2200,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+      delay: Math.random() * 2000,
+    });
+  }
+}
+
+/**
+ * Schedule occasional comets that streak across the sky with a glowing tail.
+ * Direction and altitude are randomised per comet. Runs for the scene's
+ * lifetime and cleans up its timer automatically when the scene shuts down.
+ */
+export function spawnCometStreaks(
+  scene: Phaser.Scene,
+  w: number,
+  h: number,
+  opts: { minDelay?: number; maxDelay?: number } = {},
+): void {
+  const minDelay = opts.minDelay ?? 6000;
+  const maxDelay = opts.maxDelay ?? 14000;
+  const fire = () => {
+    const leftToRight = Math.random() < 0.5;
+    const startX = leftToRight ? -80 : w + 80;
+    const endX   = leftToRight ? w + 80 : -80;
+    const startY = 60 + Math.random() * (h * 0.55);
+    const endY   = startY + (80 + Math.random() * 180) * (Math.random() < 0.5 ? 1 : -1);
+    const angle  = Math.atan2(endY - startY, endX - startX);
+
+    const container = scene.add.container(startX, startY);
+    // Tail — elongated glow
+    const tail = scene.add.image(-44, 0, 'glow-cyan')
+      .setScale(1.1, 0.18)
+      .setAlpha(0.55)
+      .setTint(0xcfe8ff)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    // Head — brighter tight glow
+    const head = scene.add.image(0, 0, 'glow-cyan')
+      .setScale(0.32)
+      .setAlpha(0.9)
+      .setTint(0xffffff)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    container.add([tail, head]);
+    container.rotation = angle;
+
+    const dist = Math.hypot(endX - startX, endY - startY);
+    const duration = 1400 + (dist / w) * 600;
+    scene.tweens.add({
+      targets: container,
+      x: endX, y: endY,
+      duration,
+      ease: 'Sine.easeIn',
+      onComplete: () => container.destroy(),
+    });
+    // Fade out near end
+    scene.tweens.add({
+      targets: container,
+      alpha: 0,
+      delay: duration * 0.75,
+      duration: duration * 0.25,
+    });
+  };
+  const schedule = () => {
+    scene.time.delayedCall(minDelay + Math.random() * (maxDelay - minDelay), () => {
+      fire();
+      schedule();
+    });
+  };
+  // Small initial delay so comets don't always fire the instant a scene opens.
+  scene.time.delayedCall(2000 + Math.random() * 4000, () => { fire(); schedule(); });
+}
+

@@ -2,11 +2,10 @@ import Phaser from 'phaser';
 import { audio } from '../audio/AudioEngine';
 import { COLORS, FONTS, HEX, VH, VW } from '../config';
 import { Settings } from '../state';
-import { ThemedButton } from '../ui/Components';
+import { spawnAmbientBubbles, spawnCometStreaks, spawnStarShimmer, ThemedButton } from '../ui/Components';
 
 export class MainMenuScene extends Phaser.Scene {
   private rotatingPlanet?: Phaser.GameObjects.Container;
-  private particles?: Phaser.GameObjects.Group;
   constructor() { super('MainMenu'); }
 
   create() {
@@ -22,8 +21,10 @@ export class MainMenuScene extends Phaser.Scene {
     this.tweens.add({ targets: planet, angle: 360, duration: 90000, repeat: -1 });
     this.tweens.add({ targets: glow, alpha: 0.7, scale: 2.9, yoyo: true, duration: 4500, repeat: -1, ease: 'Sine.easeInOut' });
 
-    // Drifting energy particles
-    this.spawnParticles();
+    // Drifting energy bubbles, shimmering stars, occasional comets.
+    spawnStarShimmer(this, VW, VH);
+    spawnAmbientBubbles(this, VW, VH);
+    spawnCometStreaks(this, VW, VH);
 
     // Title logo
     const logo = this.add.image(VW / 2, 110, 'title-logo').setScale(1.0);
@@ -91,19 +92,7 @@ export class MainMenuScene extends Phaser.Scene {
     mkToggle('SFX', () => Settings.sfx, (v) => { Settings.sfx = v; audio.setSfxEnabled(v); }, 130);
   }
 
-  private spawnParticles() {
-    for (let i = 0; i < 30; i++) {
-      const p = this.add.image(Math.random() * VW, Math.random() * VH, 'glow-cyan')
-        .setScale(0.05 + Math.random() * 0.08)
-        .setAlpha(0.05 + Math.random() * 0.15)
-        .setBlendMode(Phaser.BlendModes.ADD);
-      this.tweens.add({
-        targets: p, y: p.y - 200 - Math.random() * 200, x: p.x + (Math.random() - 0.5) * 100,
-        alpha: 0, duration: 8000 + Math.random() * 6000, repeat: -1, repeatDelay: Math.random() * 3000,
-        onRepeat: () => { p.x = Math.random() * VW; p.y = VH + 50; p.alpha = 0.15; },
-      });
-    }
-  }
+
 
   private openCreditsPopup(x: number, y: number) {
     const overlay = this.add.container(0, 0).setDepth(100);
