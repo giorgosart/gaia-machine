@@ -36,27 +36,30 @@ export class ThemedButton extends Phaser.GameObjects.Container {
 
     const w = this.bg.width, h = this.bg.height;
     this.setSize(w, h);
-    this.setInteractive(new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h), Phaser.Geom.Rectangle.Contains);
+    // Use the bg image as the interactive target. Image hit-testing respects
+    // origin (0.5) natively, so the entire visible button responds — including
+    // the area under the label text (which is non-interactive Text).
+    this.bg.setInteractive({ useHandCursor: true });
 
-    this.on('pointerover', () => {
+    this.bg.on('pointerover', () => {
       if (!this.enabled) return;
       this.bg.setTexture(`${this.baseKey}-hover`);
       this.label.setColor(HEX.textBright);
       audio.hover();
       scene.tweens.add({ targets: this, scale: 1.03, duration: 120, ease: 'Sine.easeOut' });
     });
-    this.on('pointerout', () => {
+    this.bg.on('pointerout', () => {
       if (!this.enabled) return;
       this.bg.setTexture(`${this.baseKey}-idle`);
       this.label.setColor(HEX.goldBright);
       scene.tweens.add({ targets: this, scale: 1, duration: 120, ease: 'Sine.easeOut' });
     });
-    this.on('pointerdown', () => {
+    this.bg.on('pointerdown', () => {
       if (!this.enabled) return;
       this.bg.setTexture(`${this.baseKey}-down`);
       scene.tweens.add({ targets: this, scale: 0.97, duration: 80, ease: 'Sine.easeOut' });
     });
-    this.on('pointerup', () => {
+    this.bg.on('pointerup', () => {
       if (!this.enabled) return;
       this.bg.setTexture(`${this.baseKey}-hover`);
       scene.tweens.add({ targets: this, scale: 1.03, duration: 120, ease: 'Sine.easeOut' });
@@ -70,7 +73,8 @@ export class ThemedButton extends Phaser.GameObjects.Container {
     this.enabled = on;
     this.bg.setTexture(on ? `${this.baseKey}-idle` : `${this.baseKey}-disabled`);
     this.label.setAlpha(on ? 1 : 0.5);
-    if (!on) this.disableInteractive(); else this.setInteractive();
+    if (!on) this.bg.disableInteractive();
+    else this.bg.setInteractive({ useHandCursor: true });
   }
   setLabel(t: string) { this.label.setText(t); }
 }

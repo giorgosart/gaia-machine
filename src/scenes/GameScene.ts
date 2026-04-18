@@ -35,8 +35,8 @@ export class GameScene extends Phaser.Scene {
   statMeters: Record<string, StatMeter> = {};
   statValues: Record<string, Phaser.GameObjects.Text> = {};
   // center
-  worldCenter = { x: 800, y: 470 };
-  worldRadius = 280;
+  worldCenter = { x: 800, y: 540 };
+  worldRadius = 210;
   regionVisuals: RegionVisual[] = [];
   selectedRegion: RegionState | null = null;
   bannerText!: Phaser.GameObjects.Text;
@@ -144,24 +144,48 @@ export class GameScene extends Phaser.Scene {
       const rx = x + rd.nx * this.worldRadius;
       const ry = y + rd.ny * this.worldRadius;
       const cont = this.add.container(rx, ry);
-      const sprite = this.add.image(0, 0, `region-${r.terrain}`).setScale(0.7);
+
+      // Dark anchor disc behind the region for contrast on the globe
+      const discRadius = 34;
+      const disc = this.add.graphics();
+      disc.fillStyle(0x0b1622, 0.55);
+      disc.fillCircle(0, 0, discRadius);
+      disc.lineStyle(2, COLORS.bronzeLight, 0.65);
+      disc.strokeCircle(0, 0, discRadius);
+      cont.add(disc);
+
+      // Region sprite, smaller and centred on the disc
+      const sprite = this.add.image(0, 0, `region-${r.terrain}`).setScale(0.42);
       sprite.setOrigin(0.5);
       cont.add(sprite);
+
       // selection ring
       const ring = this.add.graphics();
       ring.lineStyle(3, COLORS.gold, 0); // hidden
       cont.add(ring);
-      // Label
-      const label = this.add.text(0, 60, r.name, {
-        fontFamily: FONTS.title, fontSize: '14px', color: HEX.text,
+
+      // Label with a dark pill backdrop for readability
+      const labelY = discRadius + 14;
+      const label = this.add.text(0, labelY, r.name, {
+        fontFamily: FONTS.title, fontSize: '13px', color: HEX.goldBright,
         stroke: '#000', strokeThickness: 3,
       }).setOrigin(0.5);
+      const pad = 8;
+      const pillW = label.width + pad * 2;
+      const pillH = label.height + 4;
+      const pill = this.add.graphics();
+      pill.fillStyle(0x0b1622, 0.75);
+      pill.fillRoundedRect(-pillW / 2, labelY - pillH / 2, pillW, pillH, 6);
+      pill.lineStyle(1, COLORS.bronzeLight, 0.5);
+      pill.strokeRoundedRect(-pillW / 2, labelY - pillH / 2, pillW, pillH, 6);
+      cont.add(pill);
       cont.add(label);
+
       // optional machine markers (visible structures embedded in nature)
       const markers: Phaser.GameObjects.Image[] = [];
       if (Math.random() < 0.55) {
         const machineKey = ['rain', 'magma', 'bloom', 'wind', 'purifier', 'peace'][Math.floor(Math.random() * 6)];
-        const m = this.add.image(15, -10, `icon-${machineKey}`).setScale(0.45).setAlpha(0.85);
+        const m = this.add.image(18, -14, `icon-${machineKey}`).setScale(0.35).setAlpha(0.9);
         cont.add(m); markers.push(m);
       }
 
@@ -195,8 +219,8 @@ export class GameScene extends Phaser.Scene {
     this.regionVisuals.forEach(rv => {
       rv.ring.clear();
       if (rv.state === r) {
-        rv.ring.lineStyle(3, COLORS.gold, 1).strokeCircle(0, 0, 70);
-        rv.ring.lineStyle(1, COLORS.divine, 0.7).strokeCircle(0, 0, 78);
+        rv.ring.lineStyle(3, COLORS.gold, 1).strokeCircle(0, 0, 42);
+        rv.ring.lineStyle(1, COLORS.divine, 0.7).strokeCircle(0, 0, 50);
         spawnRuneRing(this, rv.container.x, rv.container.y, COLORS.gold);
       }
     });
