@@ -1,6 +1,7 @@
 // Procedural texture generation: builds all UI/world artwork in code so the game
 // has zero external image dependencies and a perfectly cohesive style.
 import Phaser from 'phaser';
+import { CONDITIONS } from '../data/conditions';
 
 type C = CanvasRenderingContext2D;
 
@@ -156,7 +157,9 @@ export function makeMachineCard(scene: Phaser.Scene, key: string, w: number, h: 
 
 // ---------- Icons (for stats and machines) ----------
 type IconKind = 'climate' | 'nature' | 'humans' | 'tectonics' | 'pollution'
-  | 'rain' | 'magma' | 'bloom' | 'wind' | 'purifier' | 'peace';
+  | 'rain' | 'magma' | 'bloom' | 'wind' | 'purifier' | 'peace'
+  | 'storm' | 'solar' | 'root' | 'tide' | 'ember' | 'relay' | 'seeder' | 'lullaby'
+  | 'energy';
 
 export function makeIcon(scene: Phaser.Scene, key: string, kind: IconKind, size = 64) {
   const { c, ctx } = makeCanvas(size, size);
@@ -337,8 +340,173 @@ export function makeIcon(scene: Phaser.Scene, key: string, kind: IconKind, size 
       ctx.fillStyle = '#ffe89a';
       ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
     },
+    // ---------- NEW STAGE MACHINE ICONS ----------
+    storm() {
+      // lightning bolt inside cloud
+      ctx.fillStyle = '#8aaacc';
+      ctx.beginPath();
+      ctx.arc(cx - 6, cy - 4, 9, 0, Math.PI * 2);
+      ctx.arc(cx + 8, cy - 4, 8, 0, Math.PI * 2);
+      ctx.arc(cx, cy - 9, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff4cc';
+      ctx.beginPath();
+      ctx.moveTo(cx - 2, cy - 2); ctx.lineTo(cx + 4, cy - 2);
+      ctx.lineTo(cx - 2, cy + 6); ctx.lineTo(cx + 6, cy + 6);
+      ctx.lineTo(cx - 4, cy + 18); ctx.lineTo(cx + 1, cy + 8);
+      ctx.lineTo(cx - 4, cy + 8); ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#6aa8ff'; ctx.lineWidth = 1.5; ctx.stroke();
+    },
+    solar() {
+      // magnifying lens beam
+      ctx.strokeStyle = '#f0c860'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(cx - 4, cy - 4, 10, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,232,154,0.45)';
+      ctx.beginPath(); ctx.arc(cx - 4, cy - 4, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#e8853a'; ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(cx + 4, cy + 4); ctx.lineTo(cx + 18, cy + 18); ctx.stroke();
+      // rays
+      for (let i = 0; i < 6; i++) {
+        const a = (-Math.PI / 2) + (i / 6) * Math.PI * 1.1;
+        ctx.beginPath();
+        ctx.moveTo(cx - 4 + Math.cos(a) * 12, cy - 4 + Math.sin(a) * 12);
+        ctx.lineTo(cx - 4 + Math.cos(a) * 18, cy - 4 + Math.sin(a) * 18);
+        ctx.stroke();
+      }
+    },
+    root() {
+      // branching root tree
+      ctx.strokeStyle = '#3a7a4a'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      const drawBranch = (x: number, y: number, a: number, len: number, depth: number) => {
+        if (depth === 0 || len < 3) return;
+        const ex = x + Math.cos(a) * len;
+        const ey = y + Math.sin(a) * len;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ex, ey); ctx.stroke();
+        drawBranch(ex, ey, a - 0.5, len * 0.7, depth - 1);
+        drawBranch(ex, ey, a + 0.5, len * 0.7, depth - 1);
+      };
+      drawBranch(cx, cy - 18, Math.PI / 2, 12, 3);
+      ctx.strokeStyle = '#6abf6a'; ctx.lineWidth = 1.5;
+      drawBranch(cx - 6, cy - 12, Math.PI / 2 + 0.3, 6, 2);
+      drawBranch(cx + 6, cy - 12, Math.PI / 2 - 0.3, 6, 2);
+    },
+    tide() {
+      // wave layered
+      ctx.strokeStyle = '#2a78a8'; ctx.lineWidth = 2.5;
+      for (let i = 0; i < 3; i++) {
+        const yy = cy - 6 + i * 8;
+        ctx.beginPath();
+        ctx.moveTo(cx - 18, yy);
+        ctx.bezierCurveTo(cx - 9, yy - 6, cx + 2, yy + 6, cx + 9, yy);
+        ctx.bezierCurveTo(cx + 14, yy - 3, cx + 18, yy + 2, cx + 18, yy);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(90,200,230,0.3)';
+      ctx.fillRect(cx - 18, cy + 8, 36, 8);
+    },
+    ember() {
+      // industrial chimney with ember
+      ctx.fillStyle = '#5a4528';
+      ctx.fillRect(cx - 5, cy - 4, 10, 18);
+      ctx.fillStyle = '#7a5030';
+      ctx.fillRect(cx - 8, cy - 8, 16, 6);
+      // embers
+      ctx.fillStyle = '#e8853a';
+      ctx.beginPath(); ctx.arc(cx - 2, cy - 14, 3, 0, Math.PI * 2);
+      ctx.arc(cx + 4, cy - 18, 2.5, 0, Math.PI * 2);
+      ctx.arc(cx, cy - 12, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f0c860';
+      ctx.beginPath(); ctx.arc(cx - 2, cy - 14, 1.4, 0, Math.PI * 2); ctx.fill();
+      // smoke
+      ctx.fillStyle = 'rgba(120,100,80,0.5)';
+      ctx.beginPath(); ctx.arc(cx + 6, cy - 12, 5, 0, Math.PI * 2); ctx.fill();
+    },
+    relay() {
+      // migratory bird trio
+      ctx.strokeStyle = '#b07a3a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      const bird = (x: number, y: number, s: number) => {
+        ctx.beginPath();
+        ctx.moveTo(x - 7 * s, y);
+        ctx.quadraticCurveTo(x - 3 * s, y - 5 * s, x, y);
+        ctx.quadraticCurveTo(x + 3 * s, y - 5 * s, x + 7 * s, y);
+        ctx.stroke();
+      };
+      bird(cx, cy - 4, 1.0);
+      bird(cx - 10, cy + 6, 0.7);
+      bird(cx + 10, cy + 6, 0.7);
+    },
+    seeder() {
+      // cluster of snowflake/dot seeds in a cloud
+      ctx.fillStyle = '#8aa0b8';
+      ctx.beginPath();
+      ctx.arc(cx - 6, cy - 6, 8, 0, Math.PI * 2);
+      ctx.arc(cx + 8, cy - 6, 7, 0, Math.PI * 2);
+      ctx.arc(cx, cy - 10, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff4cc';
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath(); ctx.arc(cx + i * 5, cy + 6 + (i & 1 ? 2 : 0), 1.8, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = '#8fd6ff'; ctx.lineWidth = 1.2;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 5 - 2, cy + 10); ctx.lineTo(cx + i * 5, cy + 16); ctx.stroke();
+      }
+    },
+    lullaby() {
+      // concentric hum rings over a tiny planet
+      ctx.fillStyle = '#8060c0';
+      ctx.beginPath(); ctx.arc(cx, cy + 4, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#c0a0ff'; ctx.lineWidth = 2;
+      for (let i = 1; i <= 3; i++) {
+        ctx.globalAlpha = 1 - i * 0.22;
+        ctx.beginPath(); ctx.arc(cx, cy + 4, 6 + i * 5, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffe89a';
+      ctx.beginPath(); ctx.arc(cx - 3, cy + 2, 1.5, 0, Math.PI * 2); ctx.fill();
+    },
+    energy() {
+      // divine energy: diamond crystal
+      ctx.fillStyle = '#8fd6ff';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 14);
+      ctx.lineTo(cx + 10, cy);
+      ctx.lineTo(cx, cy + 16);
+      ctx.lineTo(cx - 10, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#fff4cc'; ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx, cy - 14); ctx.lineTo(cx, cy + 16); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy); ctx.stroke();
+    },
   };
   draw[kind]();
+  addTexture(scene, key, c);
+}
+
+// ---------- Condition badge: tiny tinted glyph disc ----------
+export function makeConditionBadge(scene: Phaser.Scene, key: string, glyph: string, color: number, size = 28) {
+  const { c, ctx } = makeCanvas(size, size);
+  const cx = size / 2, cy = size / 2, r = size / 2 - 1;
+  const r1 = (color >> 16) & 0xff, g1 = (color >> 8) & 0xff, b1 = color & 0xff;
+  const rim = `rgb(${Math.min(255, r1 + 40)},${Math.min(255, g1 + 40)},${Math.min(255, b1 + 40)})`;
+  const body = `rgba(${r1},${g1},${b1},0.92)`;
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.arc(cx, cy, r - 2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = rim; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#fff4cc';
+  ctx.font = `bold ${Math.floor(size * 0.62)}px serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(glyph, cx, cy + 1);
   addTexture(scene, key, c);
 }
 
@@ -1033,7 +1201,7 @@ export function generateAllAssets(scene: Phaser.Scene) {
   makePanelTexture(scene, 'panel-objective', 360, 240);
   makePanelTexture(scene, 'panel-banner', 700, 80);
   makePanelTexture(scene, 'panel-bottom', 1100, 200);
-  makePanelTexture(scene, 'panel-machines', 340, 560);
+  makePanelTexture(scene, 'panel-machines', 340, 680);
   makePanelTexture(scene, 'panel-trend', 320, 110);
   makePanelTexture(scene, 'panel-modal', 1000, 600);
   makePanelTexture(scene, 'panel-menu', 520, 560);
@@ -1048,8 +1216,15 @@ export function generateAllAssets(scene: Phaser.Scene) {
   // machine cards (selected/idle done dynamically)
   // icons
   (['climate', 'nature', 'humans', 'tectonics', 'pollution',
-    'rain', 'magma', 'bloom', 'wind', 'purifier', 'peace'] as const)
+    'rain', 'magma', 'bloom', 'wind', 'purifier', 'peace',
+    'storm', 'solar', 'root', 'tide', 'ember', 'relay', 'seeder', 'lullaby',
+    'energy'] as const)
     .forEach(k => makeIcon(scene, `icon-${k}`, k, 64));
+  // condition badges
+  for (const id of Object.keys(CONDITIONS)) {
+    const def = CONDITIONS[id as keyof typeof CONDITIONS];
+    makeConditionBadge(scene, `badge-${id}`, def.glyph, def.color, 28);
+  }
   // glows / particles
   makeGlow(scene, 'glow-cyan', 256, 'rgba(143,214,255,0.55)');
   makeGlow(scene, 'glow-gold', 256, 'rgba(240,200,96,0.6)');

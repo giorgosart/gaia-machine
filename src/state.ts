@@ -7,5 +7,5 @@ export const Settings = {
 };
 
 export const Game = {
-  world: null as WorldState | null,
+  world: undefined as WorldState | undefined,
 };

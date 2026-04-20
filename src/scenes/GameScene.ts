@@ -5,9 +5,14 @@ import Phaser from 'phaser';
 import { audio } from '../audio/AudioEngine';
 import { COLORS, FONTS, HEX, VH, VW } from '../config';
 import { MACHINES, REGIONS, type MachineDef, type RegionState, type WorldState } from '../data/data';
-import { createWorld, describeStat, isMachineReady, nextTurn, statColor } from '../sim/Simulation';
+import { CONDITIONS } from '../data/conditions';
+import { UPGRADE_OFFERS, WORLD_TRAITS, SCENARIOS } from '../data/traits';
+import { passiveOf } from '../data/passives';
+import { phaseForEra } from '../data/phases';
+import { canAfford, createWorld, describeStat, isMachineReady, nextTurn, statColor, applyUpgrade } from '../sim/Simulation';
+import { computeForecast } from '../sim/forecast';
 import { Game, Settings } from '../state';
-import { spawnAmbientBubbles, spawnCometStreaks, spawnFloater, spawnRuneRing, spawnStarShimmer, StatMeter, ThemedButton } from '../ui/Components';
+import { spawnAmbientBubbles, spawnCometStreaks, spawnFloater, spawnMachineEffect, spawnRuneRing, spawnStarShimmer, StatMeter, ThemedButton } from '../ui/Components';
 import { getRegionLocalPolygon } from '../assets/textures';
 
 interface RegionVisual {
@@ -28,6 +33,13 @@ interface MachineCardUI {
   label: Phaser.GameObjects.Text;
   short: Phaser.GameObjects.Text;
   cooldownTxt: Phaser.GameObjects.Text;
+  costPill: Phaser.GameObjects.Container;
+  costText: Phaser.GameObjects.Text;
+}
+
+interface RegionBadges {
+  container: Phaser.GameObjects.Container;
+  icons: Phaser.GameObjects.Image[];
 }
 
 export class GameScene extends Phaser.Scene {
@@ -62,14 +74,31 @@ export class GameScene extends Phaser.Scene {
   confirmBtn!: ThemedButton;
   // trends
   trendTexts: Phaser.GameObjects.Text[] = [];
+  // energy + forecast + upgrade
+  energyText!: Phaser.GameObjects.Text;
+  energyIcon!: Phaser.GameObjects.Image;
+  energyPips: Phaser.GameObjects.Graphics | null = null;
+  forecastContainer!: Phaser.GameObjects.Container;
+  forecastText!: Phaser.GameObjects.Text;
+  regionBadges: Map<string, RegionBadges> = new Map();
+  upgradeModal?: Phaser.GameObjects.Container;
+  summaryOverlay?: Phaser.GameObjects.Container;
+  previewContainer!: Phaser.GameObjects.Container;
   // misc
   busy = false;
 
   constructor() { super('Game'); }
 
-  create() {
-    this.world = Game.world ?? createWorld();
-    Game.world = this.world;
+  create(data?: { difficulty?: 'steward' | 'harsh' | 'dying'; scenarioId?: string; endless?: boolean; traits?: string[] }) {
+    if (!Game.world || data) {
+      Game.world = createWorld({
+        difficulty: data?.difficulty,
+        scenarioId: data?.scenarioId,
+        endless: data?.endless,
+        traits: data?.traits,
+      });
+    }
+    this.world = Game.world;
 
     // Background
     this.add.image(VW / 2, VH / 2, 'bg-stars').setDisplaySize(VW, VH);
@@ -89,9 +118,16 @@ export class GameScene extends Phaser.Scene {
     this.buildSidePanels();
     this.buildBottomBar();
     this.buildTrends();
+    this.buildForecastPanel();
+    this.previewContainer = this.add.container(0, 0).setDepth(60);
 
     // Initial UI sync
     this.refreshAll();
+
+    // Offer upgrade if the run setup or a previous turn queued one
+    if (this.world.pendingUpgradeEra) {
+      this.time.delayedCall(800, () => this.openUpgradeModal(this.world.pendingUpgradeEra!));
+    }
 
     // Input: ESC for pause, Enter to confirm
     this.input.keyboard?.on('keydown-ESC', () => this.openPause());
@@ -276,6 +312,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.refreshConfirm();
     this.refreshEventPanel();
+    this.showRegionPreview();
   }
 
   // ===================== EVENT BANNER =====================
@@ -317,6 +354,15 @@ export class GameScene extends Phaser.Scene {
       wordWrap: { width: 300 }, lineSpacing: 3,
     }).setOrigin(0.5, 0);
 
+    // Divine energy indicator (icon + text + pips)
+    this.energyIcon = this.add.image(rx - 90, ry + 120, 'icon-energy').setScale(0.45);
+    this.energyText = this.add.text(rx - 60, ry + 120, 'Divine Energy 2 / 4', {
+      fontFamily: FONTS.title, fontSize: '15px', color: HEX.divine,
+    }).setOrigin(0, 0.5);
+    this.energyPips = this.add.graphics();
+    (this.energyPips as any)._baseY = ry + 148;
+    (this.energyPips as any)._baseX = rx;
+
     // RIGHT (bottom): Event panel — directly underneath harmony.
     const lx = rx, ly = ry + 240;
     this.add.image(lx, ly, 'panel-event');
@@ -333,48 +379,62 @@ export class GameScene extends Phaser.Scene {
 
   // ===================== LEFT MACHINE COLUMN =====================
   buildBottomBar() {
-    // Left-side vertical panel: 2 columns x 3 rows of machine cards.
-    const panelX = 200, panelY = 480;
-    const panelHalfH = 280;  // panel-machines is 560 tall
+    // Left-side vertical panel: 3 cols x 5 rows of machine cards.
+    const panelX = 200, panelY = 520;
+    const panelHalfH = 340;  // panel-machines is 680 tall
     this.add.image(panelX, panelY, 'panel-machines');
-    this.add.text(panelX, panelY - panelHalfH + 28, 'CHOOSE A MACHINE', {
-      fontFamily: FONTS.title, fontSize: '18px', color: HEX.gold, letterSpacing: 3 as any,
+    this.add.text(panelX, panelY - panelHalfH + 24, 'CHOOSE A MACHINE', {
+      fontFamily: FONTS.title, fontSize: '16px', color: HEX.gold, letterSpacing: 3 as any,
     }).setOrigin(0.5);
 
     const cards = MACHINES;
-    const cols = 2;
-    const colGap = 10;
-    const rowGap = 15;
-    const cardW = 133, cardH = 125; // card-idle scaled 0.78
+    const cols = 3;
+    const cardScale = 0.58;
+    const cardW = 170 * cardScale;   // card-idle ~170px
+    const cardH = 160 * cardScale;
+    const colGap = 6;
+    const rowGap = 6;
     const gridW = cols * cardW + (cols - 1) * colGap;
     const firstColX = panelX - gridW / 2 + cardW / 2;
     const rows = Math.ceil(cards.length / cols);
-    const gridTop = panelY - panelHalfH + 70; // below title
+    const gridTop = panelY - panelHalfH + 58;
     cards.forEach((m, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const cx = firstColX + col * (cardW + colGap);
       const cy = gridTop + cardH / 2 + row * (cardH + rowGap);
       const cont = this.add.container(cx, cy);
-      const bg = this.add.image(0, 0, 'card-idle').setScale(0.78);
+      const bg = this.add.image(0, 0, 'card-idle').setScale(cardScale);
       cont.add(bg);
-      const icon = this.add.image(0, -28, m.iconKey).setScale(0.95);
+      const icon = this.add.image(0, -18, m.iconKey).setScale(0.62);
       cont.add(icon);
-      const label = this.add.text(0, 22, m.name, {
-        fontFamily: FONTS.title, fontSize: '13px', color: HEX.goldBright,
+      const label = this.add.text(0, 16, m.name, {
+        fontFamily: FONTS.title, fontSize: '10px', color: HEX.goldBright,
         stroke: '#000', strokeThickness: 2, align: 'center',
-        wordWrap: { width: 110 },
+        wordWrap: { width: cardW - 6 },
       }).setOrigin(0.5, 0);
       cont.add(label);
-      const short = this.add.text(0, 50, '', {
-        fontFamily: FONTS.ui, fontSize: '11px', color: HEX.text, align: 'center',
-        wordWrap: { width: 110 },
+      const short = this.add.text(0, 38, '', {
+        fontFamily: FONTS.ui, fontSize: '8px', color: HEX.textDim, align: 'center',
+        wordWrap: { width: cardW - 6 },
       }).setOrigin(0.5, 0);
       cont.add(short);
       const cooldownTxt = this.add.text(0, 0, '', {
-        fontFamily: FONTS.title, fontSize: '36px', color: HEX.danger, stroke: '#000', strokeThickness: 4,
+        fontFamily: FONTS.title, fontSize: '24px', color: HEX.danger, stroke: '#000', strokeThickness: 3,
       }).setOrigin(0.5);
       cont.add(cooldownTxt);
+
+      // Cost pill (top-left): crystal + number
+      const costPill = this.add.container(-cardW / 2 + 12, -cardH / 2 + 10);
+      const pillBg = this.add.graphics();
+      pillBg.fillStyle(0x0a0e18, 0.9).fillRoundedRect(-14, -8, 28, 16, 4);
+      pillBg.lineStyle(1, COLORS.divine, 0.7).strokeRoundedRect(-14, -8, 28, 16, 4);
+      const crystalIc = this.add.image(-6, 0, 'icon-energy').setScale(0.22);
+      const costText = this.add.text(4, 0, `${m.cost}`, {
+        fontFamily: FONTS.title, fontSize: '11px', color: HEX.divine,
+      }).setOrigin(0.5);
+      costPill.add([pillBg, crystalIc, costText]);
+      cont.add(costPill);
 
       bg.setInteractive({ useHandCursor: true });
       bg.on('pointerover', () => {
@@ -384,15 +444,21 @@ export class GameScene extends Phaser.Scene {
       });
       bg.on('pointerout', () => { cont.setScale(1.0); this.hideMachineTooltip(); });
       bg.on('pointerup', () => {
-        if (!this.machineEnabled(m)) { audio.warn(); return; }
+        if (!this.machineEnabled(m)) {
+          audio.warn();
+          if (this.world.era < m.unlockEra) this.toast(`Unlocks Era ${m.unlockEra}.`);
+          else if (!canAfford(this.world, m)) this.toast(`Needs ${m.cost} Divine Energy.`);
+          else if ((this.world.machineCooldowns[m.id] || 0) > 0) this.toast(`Recharging (${this.world.machineCooldowns[m.id]}).`);
+          return;
+        }
         this.selectMachine(m);
       });
 
-      this.machineCards.push({ def: m, container: cont, bg, icon, label, short, cooldownTxt });
+      this.machineCards.push({ def: m, container: cont, bg, icon, label, short, cooldownTxt, costPill, costText });
     });
 
     // Confirm button — bottom of the column, inside panel bounds.
-    const confirmY = gridTop + rows * cardH + (rows - 1) * rowGap + 50;
+    const confirmY = gridTop + rows * cardH + (rows - 1) * rowGap + 40;
     this.confirmBtn = new ThemedButton(this, {
       x: panelX, y: confirmY, text: 'Confirm', textureKey: 'btn-small',
       enabled: false,
@@ -410,9 +476,11 @@ export class GameScene extends Phaser.Scene {
     // clear region rings if global
     if (m.target === 'global') {
       this.regionVisuals.forEach(rv => rv.ring.clear());
+      this.previewContainer.removeAll(true);
     }
     this.refreshConfirm();
     this.refreshEventPanel();
+    this.showRegionPreview();
   }
 
   machineEnabled(m: MachineDef): boolean {
@@ -429,19 +497,68 @@ export class GameScene extends Phaser.Scene {
   tooltip?: Phaser.GameObjects.Container;
   showMachineTooltip(m: MachineDef, x: number, y: number) {
     this.hideMachineTooltip();
-    const c = this.add.container(x, y - 130).setDepth(50);
+    const c = this.add.container(x, y - 150).setDepth(50);
+    const w = 340, h = 170;
     const bg = this.add.graphics();
-    bg.fillStyle(0x0a0e18, 0.95).fillRoundedRect(-160, -60, 320, 120, 8);
-    bg.lineStyle(1.5, COLORS.bronze, 1).strokeRoundedRect(-160, -60, 320, 120, 8);
+    bg.fillStyle(0x0a0e18, 0.96).fillRoundedRect(-w / 2, -h / 2, w, h, 8);
+    bg.lineStyle(1.5, COLORS.bronze, 1).strokeRoundedRect(-w / 2, -h / 2, w, h, 8);
     c.add(bg);
-    c.add(this.add.text(0, -45, m.name, { fontFamily: FONTS.title, fontSize: '16px', color: HEX.gold }).setOrigin(0.5));
-    c.add(this.add.text(0, -20, m.desc, {
-      fontFamily: FONTS.ui, fontSize: '12px', color: HEX.text, align: 'center',
-      wordWrap: { width: 300 }, lineSpacing: 2,
+    c.add(this.add.text(0, -h / 2 + 14, m.name, { fontFamily: FONTS.title, fontSize: '16px', color: HEX.gold }).setOrigin(0.5));
+    c.add(this.add.image(-w / 2 + 20, -h / 2 + 14, 'icon-energy').setScale(0.3));
+    c.add(this.add.text(-w / 2 + 34, -h / 2 + 14, `${m.cost}`, { fontFamily: FONTS.title, fontSize: '13px', color: HEX.divine }).setOrigin(0, 0.5));
+    c.add(this.add.text(0, -h / 2 + 36, m.desc, {
+      fontFamily: FONTS.ui, fontSize: '11px', color: HEX.text, align: 'center',
+      wordWrap: { width: w - 20 }, lineSpacing: 2,
     }).setOrigin(0.5, 0));
+    if (m.preview) {
+      c.add(this.add.text(0, -h / 2 + 96, `Effect: ${m.preview}`, {
+        fontFamily: FONTS.ui, fontSize: '10px', color: HEX.ok, align: 'center',
+        wordWrap: { width: w - 20 }, lineSpacing: 2,
+      }).setOrigin(0.5, 0));
+    }
+    if (m.downside) {
+      c.add(this.add.text(0, -h / 2 + 128, `Risk: ${m.downside}`, {
+        fontFamily: FONTS.ui, fontSize: '10px', color: HEX.warn, align: 'center',
+        wordWrap: { width: w - 20 }, lineSpacing: 2,
+      }).setOrigin(0.5, 0));
+    }
     this.tooltip = c;
   }
   hideMachineTooltip() { if (this.tooltip) { this.tooltip.destroy(); this.tooltip = undefined; } }
+
+  // Badge tooltip (conditions / events on regions)
+  badgeTooltip?: Phaser.GameObjects.Container;
+  showBadgeTooltip(title: string, desc: string, x: number, y: number) {
+    this.hideBadgeTooltip();
+    const pad = 8;
+    const c = this.add.container(0, 0).setDepth(80);
+    const titleTxt = this.add.text(0, 0, title, { fontFamily: FONTS.title, fontSize: '13px', color: HEX.gold }).setOrigin(0, 0);
+    const descTxt = this.add.text(0, titleTxt.height + 4, desc, {
+      fontFamily: FONTS.ui, fontSize: '11px', color: HEX.text,
+      wordWrap: { width: 240 }, lineSpacing: 2,
+    }).setOrigin(0, 0);
+    const w = Math.max(titleTxt.width, descTxt.width) + pad * 2;
+    const h = titleTxt.height + descTxt.height + 4 + pad * 2;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0a0e18, 0.96).fillRoundedRect(0, 0, w, h, 6);
+    bg.lineStyle(1.5, COLORS.bronze, 1).strokeRoundedRect(0, 0, w, h, 6);
+    titleTxt.setPosition(pad, pad);
+    descTxt.setPosition(pad, pad + titleTxt.height + 4);
+    c.add([bg, titleTxt, descTxt]);
+    (c as any)._size = { w, h };
+    this.badgeTooltip = c;
+    this.moveBadgeTooltip(x, y);
+  }
+  moveBadgeTooltip(x: number, y: number) {
+    if (!this.badgeTooltip) return;
+    const s = (this.badgeTooltip as any)._size as { w: number; h: number };
+    let tx = x + 14;
+    let ty = y + 14;
+    if (tx + s.w > VW - 4) tx = x - s.w - 14;
+    if (ty + s.h > VH - 4) ty = y - s.h - 14;
+    this.badgeTooltip.setPosition(tx, ty);
+  }
+  hideBadgeTooltip() { if (this.badgeTooltip) { this.badgeTooltip.destroy(); this.badgeTooltip = undefined; } }
 
   // ===================== TRENDS =====================
   buildTrends() {
@@ -493,16 +610,21 @@ export class GameScene extends Phaser.Scene {
     audio.machineActivate(this.selectedMachine.id);
 
     // Visual: rune ring on target
+    const mId = this.selectedMachine.id;
     if (this.selectedMachine.target === 'region' && this.selectedRegion) {
       const rv = this.regionVisuals.find(r => r.state === this.selectedRegion);
       if (rv) {
         spawnRuneRing(this, rv.container.x, rv.container.y, parseInt(this.selectedMachine.accent.slice(1), 16));
+        spawnMachineEffect(this, mId, rv.container.x, rv.container.y);
         // pulse
         this.tweens.add({ targets: rv.container, scale: 1.15, yoyo: true, duration: 250, ease: 'Sine.easeOut' });
       }
     } else {
-      // global: rings on all
-      this.regionVisuals.forEach(rv => spawnRuneRing(this, rv.container.x, rv.container.y, parseInt(this.selectedMachine!.accent.slice(1), 16)));
+      // global: rings + fx on all
+      this.regionVisuals.forEach(rv => {
+        spawnRuneRing(this, rv.container.x, rv.container.y, parseInt(this.selectedMachine!.accent.slice(1), 16));
+        spawnMachineEffect(this, mId, rv.container.x, rv.container.y);
+      });
     }
 
     this.time.delayedCall(450, () => {
@@ -535,8 +657,18 @@ export class GameScene extends Phaser.Scene {
           this.eventDesc.setText(e.evt.desc(e.region));
           this.flashRegion(e.region);
         }
+      } else if (result.synergies.length) {
+        this.setBanner(`Synergy — ${result.synergies[0]}`, HEX.divine);
       } else {
         this.setBanner('The Engine hums in balance.');
+      }
+
+      // Turn summary (always)
+      this.showSummary();
+
+      // Upgrade offer
+      if (result.upgradeOffered) {
+        this.time.delayedCall(1200, () => this.openUpgradeModal(result.upgradeOffered!));
       }
 
       this.refreshAll();
@@ -554,6 +686,7 @@ export class GameScene extends Phaser.Scene {
       this.selectedRegion = null;
       this.machineCards.forEach(c => c.bg.setTexture('card-idle'));
       this.regionVisuals.forEach(rv => rv.ring.clear());
+      this.previewContainer.removeAll(true);
       this.busy = false;
       this.refreshConfirm();
     });
@@ -611,22 +744,28 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Machine cards (cooldown)
+    // Machine cards (cooldown + affordability + cost)
     this.machineCards.forEach(c => {
       const cd = this.world.machineCooldowns[c.def.id] || 0;
       const locked = this.world.era < c.def.unlockEra;
+      const unaffordable = !canAfford(this.world, c.def);
+      c.costText.setText(`${c.def.cost}`);
       if (cd > 0) { c.cooldownTxt.setText(String(cd)); c.bg.setAlpha(0.55); }
-      else { c.cooldownTxt.setText(''); c.bg.setAlpha(locked ? 0.4 : 1); }
+      else { c.cooldownTxt.setText(''); c.bg.setAlpha(locked ? 0.4 : unaffordable ? 0.55 : 1); }
       if (locked) {
         c.label.setColor(HEX.textDim);
-        c.short.setText(`Unlocks Era ${c.def.unlockEra}`);
+        c.short.setText(`Era ${c.def.unlockEra}`);
       } else {
         c.label.setColor(HEX.goldBright);
-        c.short.setText('');
+        c.short.setText(unaffordable && cd === 0 ? 'low energy' : '');
       }
+      c.costText.setColor(unaffordable ? HEX.danger : HEX.divine);
     });
 
     this.refreshTrends();
+    this.refreshEnergy();
+    this.refreshForecast();
+    this.refreshRegionBadges();
   }
 
   refreshEventPanel() {
@@ -660,6 +799,187 @@ export class GameScene extends Phaser.Scene {
       this.cameras.main.flash(120, 80, 0, 0);
       audio.warn();
     }
+  }
+
+  // ===================== FORECAST PANEL =====================
+  buildForecastPanel() {
+    // Small panel in the bottom-right below trends: era phase + top risks.
+    const x = VW - 200, y = VH - 100;
+    this.forecastContainer = this.add.container(x, y);
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0a0e18, 0.72).fillRoundedRect(-150, -60, 300, 120, 10);
+    bg.lineStyle(1.2, COLORS.bronze, 0.7).strokeRoundedRect(-150, -60, 300, 120, 10);
+    this.forecastContainer.add(bg);
+    const title = this.add.text(0, -48, 'FORECAST', {
+      fontFamily: FONTS.title, fontSize: '13px', color: HEX.gold, letterSpacing: 2 as any,
+    }).setOrigin(0.5);
+    this.forecastContainer.add(title);
+    this.forecastText = this.add.text(0, -28, '', {
+      fontFamily: FONTS.ui, fontSize: '11px', color: HEX.text, align: 'center',
+      wordWrap: { width: 284 }, lineSpacing: 2,
+    }).setOrigin(0.5, 0);
+    this.forecastContainer.add(this.forecastText);
+  }
+
+  refreshForecast() {
+    const phase = phaseForEra(this.world.era, this.world.totalEras);
+    const forecast = computeForecast(this.world);
+    const phaseLine = `${phase.name} — ${phase.desc}`;
+    const warnings = forecast.slice(0, 3).map(f => {
+      const icon = f.severity === 'danger' ? '✦' : f.severity === 'warn' ? '◆' : '•';
+      return `${icon} ${f.message}`;
+    });
+    const text = [phaseLine, ...warnings].join('\n');
+    this.forecastText.setText(text || phaseLine);
+  }
+
+  // ===================== CONDITION BADGES =====================
+  refreshRegionBadges() {
+    for (const rv of this.regionVisuals) {
+      const r = rv.state;
+      let bundle = this.regionBadges.get(r.id);
+      if (!bundle) {
+        const cont = this.add.container(0, 40);
+        rv.container.add(cont);
+        bundle = { container: cont, icons: [] };
+        this.regionBadges.set(r.id, bundle);
+      }
+      bundle.icons.forEach(ic => ic.destroy());
+      bundle.icons = [];
+      const list = (r.conditions ?? []).slice(0, 4);
+      const step = 16;
+      const startX = -((list.length - 1) * step) / 2;
+      list.forEach((c, i) => {
+        const ic = this.add.image(startX + i * step, 0, `badge-${c.id}`).setScale(0.8);
+        ic.setInteractive({ useHandCursor: false });
+        const def = CONDITIONS[c.id];
+        ic.on('pointerover', (p: Phaser.Input.Pointer) => this.showBadgeTooltip(def.name, def.desc, p.worldX, p.worldY));
+        ic.on('pointermove', (p: Phaser.Input.Pointer) => this.moveBadgeTooltip(p.worldX, p.worldY));
+        ic.on('pointerout', () => this.hideBadgeTooltip());
+        bundle!.container.add(ic);
+        bundle!.icons.push(ic);
+      });
+    }
+  }
+
+  // ===================== ENERGY PIPS =====================
+  refreshEnergy() {
+    this.energyText.setText(`Divine Energy ${this.world.energy} / ${this.world.energyMax}`);
+    const g = this.energyPips!;
+    g.clear();
+    const baseX = (g as any)._baseX as number;
+    const baseY = (g as any)._baseY as number;
+    const pipR = 7;
+    const gap = 6;
+    const max = this.world.energyMax;
+    const total = max * (pipR * 2) + (max - 1) * gap;
+    const start = baseX - total / 2 + pipR;
+    for (let i = 0; i < max; i++) {
+      const cx = start + i * (pipR * 2 + gap);
+      if (i < this.world.energy) {
+        g.fillStyle(COLORS.divine, 1).fillCircle(cx, baseY, pipR);
+        g.lineStyle(1, 0xffffff, 0.8).strokeCircle(cx, baseY, pipR);
+      } else {
+        g.fillStyle(0x13202d, 1).fillCircle(cx, baseY, pipR);
+        g.lineStyle(1, COLORS.bronze, 0.55).strokeCircle(cx, baseY, pipR);
+      }
+    }
+  }
+
+  // ===================== MACHINE PREVIEW ON REGION =====================
+  showRegionPreview() {
+    this.previewContainer.removeAll(true);
+    if (!this.selectedMachine || !this.selectedRegion) return;
+    const rv = this.regionVisuals.find(v => v.state === this.selectedRegion);
+    if (!rv) return;
+    const m = this.selectedMachine;
+    const previewText = m.preview ?? m.desc;
+    const txt = this.add.text(rv.container.x, rv.container.y - 70, `▶ ${previewText}`, {
+      fontFamily: FONTS.ui, fontSize: '11px', color: HEX.divine, align: 'center',
+      backgroundColor: '#0a0e18cc', padding: { x: 6, y: 3 },
+      wordWrap: { width: 240 },
+    }).setOrigin(0.5).setDepth(60);
+    this.previewContainer.add(txt);
+  }
+
+  // ===================== UPGRADE MODAL =====================
+  openUpgradeModal(era: number) {
+    const offer = UPGRADE_OFFERS.find(o => o.era === era);
+    if (!offer) return;
+    if (this.upgradeModal) this.upgradeModal.destroy();
+    const dim = this.add.rectangle(VW / 2, VH / 2, VW, VH, 0x000000, 0.55).setDepth(200);
+    const panel = this.add.image(VW / 2, VH / 2, 'panel-modal').setDepth(201);
+    const cont = this.add.container(0, 0).setDepth(202);
+    cont.add([dim, panel]);
+    const title = this.add.text(VW / 2, VH / 2 - 240, 'A FORK IN THE ENGINE', {
+      fontFamily: FONTS.title, fontSize: '32px', color: HEX.gold, letterSpacing: 4 as any,
+    }).setOrigin(0.5);
+    const sub = this.add.text(VW / 2, VH / 2 - 200, offer.title, {
+      fontFamily: FONTS.ui, fontSize: '16px', color: HEX.text, align: 'center',
+      wordWrap: { width: 700 }, lineSpacing: 3,
+    }).setOrigin(0.5);
+    cont.add([title, sub]);
+    const makeChoice = (cx: number, choice: typeof offer.left) => {
+      const card = this.add.graphics();
+      card.fillStyle(0x0e1a27, 0.95).fillRoundedRect(cx - 220, VH / 2 - 140, 440, 260, 14);
+      card.lineStyle(2, COLORS.bronzeLight, 0.9).strokeRoundedRect(cx - 220, VH / 2 - 140, 440, 260, 14);
+      cont.add(card);
+      cont.add(this.add.text(cx, VH / 2 - 108, choice.name, {
+        fontFamily: FONTS.title, fontSize: '22px', color: HEX.goldBright,
+      }).setOrigin(0.5));
+      cont.add(this.add.text(cx, VH / 2 - 70, choice.desc, {
+        fontFamily: FONTS.ui, fontSize: '14px', color: HEX.text, align: 'center',
+        wordWrap: { width: 400 }, lineSpacing: 4,
+      }).setOrigin(0.5, 0));
+      const btn = new ThemedButton(this, {
+        x: cx, y: VH / 2 + 90, text: 'Choose', textureKey: 'btn-small',
+        onClick: () => {
+          applyUpgrade(this.world, choice.grantsFlag);
+          audio.confirm();
+          cont.destroy(); this.upgradeModal = undefined;
+          this.setBanner(`Path chosen: ${choice.name}`);
+        },
+      });
+      cont.add(btn);
+    };
+    makeChoice(VW / 2 - 240, offer.left);
+    makeChoice(VW / 2 + 240, offer.right);
+    this.upgradeModal = cont;
+  }
+
+  // ===================== END-OF-TURN SUMMARY =====================
+  showSummary() {
+    const s = this.world.lastSummary;
+    if (!s) return;
+    if (this.summaryOverlay) this.summaryOverlay.destroy();
+    const cont = this.add.container(VW / 2, 220).setDepth(70);
+    const w = 560, h = 200;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0a0e18, 0.94).fillRoundedRect(-w / 2, -h / 2, w, h, 12);
+    bg.lineStyle(1.5, COLORS.gold, 0.85).strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
+    cont.add(bg);
+    const lines: string[] = [];
+    const hd = s.harmonyDelta;
+    const hSign = hd > 0 ? '+' : '';
+    lines.push(`Era ${s.era - 1} complete — Harmony ${hSign}${hd.toFixed(1)}`);
+    if (s.topGain) lines.push(`Strongest gain: ${s.topGain.label} ${s.topGain.delta > 0 ? '+' : ''}${s.topGain.delta.toFixed(1)}`);
+    if (s.topLoss) lines.push(`Largest loss:  ${s.topLoss.label} ${s.topLoss.delta > 0 ? '+' : ''}${s.topLoss.delta.toFixed(1)}`);
+    if (s.synergies.length) lines.push(`Synergy: ${s.synergies.join(' · ')}`);
+    if (s.events.length) lines.push(`Events: ${s.events.join(' · ')}`);
+    if (s.riskRegions.length) lines.push(`Watch: ${s.riskRegions.map(r => r.reason).join(', ')}`);
+    cont.add(this.add.text(0, -h / 2 + 16, 'TURN SUMMARY', {
+      fontFamily: FONTS.title, fontSize: '14px', color: HEX.gold, letterSpacing: 3 as any,
+    }).setOrigin(0.5));
+    cont.add(this.add.text(0, -h / 2 + 42, lines.join('\n'), {
+      fontFamily: FONTS.ui, fontSize: '13px', color: HEX.text, align: 'center',
+      wordWrap: { width: w - 30 }, lineSpacing: 5,
+    }).setOrigin(0.5, 0));
+    cont.setAlpha(0);
+    this.tweens.add({ targets: cont, alpha: 1, duration: 220 });
+    this.time.delayedCall(3800, () => {
+      this.tweens.add({ targets: cont, alpha: 0, duration: 400, onComplete: () => cont.destroy() });
+    });
+    this.summaryOverlay = cont;
   }
 }
 

@@ -62,9 +62,9 @@ export class EndScene extends Phaser.Scene {
     });
 
     new ThemedButton(this, { x: px - 170, y: py + 180, text: 'Play Again',
-      onClick: () => { Game.world = null; this.scene.start('Game'); } });
+      onClick: () => { Game.world = undefined; this.scene.start('RunSetup'); } });
     new ThemedButton(this, { x: px + 170, y: py + 180, text: 'Main Menu',
-      onClick: () => { Game.world = null; this.scene.start('MainMenu'); } });
+      onClick: () => { Game.world = undefined; this.scene.start('MainMenu'); } });
 
     if (win) audio.win(); else audio.lose();
   }

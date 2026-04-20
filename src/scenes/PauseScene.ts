@@ -65,15 +65,15 @@ export class PauseScene extends Phaser.Scene {
 
   restart() {
     audio.stopMusic();
-    Game.world = null;
+    Game.world = undefined;
     this.scene.stop('Game');
     this.scene.stop();
-    this.scene.start('Game');
+    this.scene.start('RunSetup');
   }
 
   toMenu() {
     audio.stopMusic();
-    Game.world = null;
+    Game.world = undefined;
     this.scene.stop('Game');
     this.scene.stop();
     this.scene.start('MainMenu');

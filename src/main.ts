@@ -3,6 +3,7 @@ import { VW, VH, COLORS } from './config';
 import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { MainMenuScene } from './scenes/MainMenuScene';
+import { RunSetupScene } from './scenes/RunSetupScene';
 import { GameScene } from './scenes/GameScene';
 import { PauseScene } from './scenes/PauseScene';
 import { HelpScene } from './scenes/HelpScene';
@@ -19,7 +20,7 @@ const config: Phaser.Types.Core.GameConfig = {
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   render: { antialias: true, pixelArt: false },
-  scene: [BootScene, PreloadScene, MainMenuScene, GameScene, PauseScene, HelpScene, EndScene],
+  scene: [BootScene, PreloadScene, MainMenuScene, RunSetupScene, GameScene, PauseScene, HelpScene, EndScene],
 };
 
 new Phaser.Game(config);

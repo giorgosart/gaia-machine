@@ -34,7 +34,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     new ThemedButton(this, {
       x: panelX, y: startY + gap * 0, text: 'Start Game',
-      onClick: () => this.transitionTo('Game'),
+      onClick: () => this.transitionTo('RunSetup'),
     });
     new ThemedButton(this, {
       x: panelX, y: startY + gap * 1, text: 'How to Play',

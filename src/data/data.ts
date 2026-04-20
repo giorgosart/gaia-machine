@@ -2,6 +2,7 @@
 // Kept data-driven so adding new content is trivial.
 
 import type { Terrain } from '../assets/textures';
+import type { RegionCondition } from './conditions';
 
 export interface MachineDef {
   id: string;
@@ -12,6 +13,12 @@ export interface MachineDef {
   desc: string;             // tooltip / help description
   target: 'region' | 'global';
   unlockEra: number;        // era >= this to be available
+  /** Divine Energy cost to deploy this machine. */
+  cost: number;
+  /** Short preview hint shown when hovering a valid target. */
+  preview?: string;
+  /** Short downside hint shown on the card. */
+  downside?: string;
   // simulation effect applied to a region (if region-targeted) or all regions (if global)
   apply: (region: RegionState, world: WorldState) => string[]; // returns delta strings for tooltip floats
   cooldown?: number;        // optional cooldown turns
@@ -41,6 +48,8 @@ export interface RegionState {
   tectonic: number;       // 0..100  pressure
   cooldown: number;       // turns of stress
   flag?: 'fire' | 'flood' | 'quake' | 'plague' | 'bloom' | 'drought' | null;
+  /** Persistent regional conditions (droughted, unrest, blooming, …) */
+  conditions?: RegionCondition[];
 }
 
 export interface WorldState {
@@ -56,6 +65,40 @@ export interface WorldState {
   machineCooldowns: Record<string, number>;
   trends: { climate: number; nature: number; humans: number; tectonics: number; pollution: number; harmony: number };
   history: { era: number; harmony: number }[];
+  // ---- New stage additions ----
+  /** Divine Energy resource. */
+  energy: number;
+  /** Max energy the caretaker can store (soft cap). */
+  energyMax: number;
+  /** Per-turn energy gain (set by difficulty). */
+  energyPerTurn: number;
+  /** Difficulty id: steward / harsh / dying. */
+  difficulty: 'steward' | 'harsh' | 'dying';
+  /** Active world trait ids. */
+  worldTraits: string[];
+  /** Upgrade flag strings chosen during run. */
+  upgrades: string[];
+  /** Pending upgrade offer (if any) that the player still needs to resolve. */
+  pendingUpgradeEra?: number;
+  /** True when the run continues past the total eras in endless mode. */
+  endless: boolean;
+  /** Scenario id used to start this run. */
+  scenarioId: string;
+  /** Last turn's machine/region (for multi-turn synergies). */
+  lastMachineId: string | null;
+  lastRegionId: string | null;
+  /** Cached last-turn summary (populated by simulation). */
+  lastSummary?: TurnSummary;
+}
+
+export interface TurnSummary {
+  era: number;
+  harmonyDelta: number;
+  topGain: { label: string; delta: number } | null;
+  topLoss: { label: string; delta: number } | null;
+  riskRegions: { id: string; reason: string }[];
+  synergies: string[];
+  events: string[];
 }
 
 // ---------- Helpers used by machine apply functions ----------
@@ -76,6 +119,9 @@ export const MACHINES: MachineDef[] = [
     desc: 'Calls divine rain over a region. Boosts moisture and cools heat. Excessive use can flood and damage prosperity.',
     target: 'region',
     unlockEra: 1,
+    cost: 1,
+    preview: '+Moisture · −Heat',
+    downside: 'Floods if already wet',
     apply: (r) => {
       const deltas: string[] = [];
       adj(r, 'moisture', +22); deltas.push('+Moisture');
@@ -98,6 +144,9 @@ export const MACHINES: MachineDef[] = [
     desc: 'Vents tectonic stress as controlled magma. Reduces quake risk but raises local heat and can scorch flora.',
     target: 'region',
     unlockEra: 1,
+    cost: 1,
+    preview: '−Pressure · +Heat',
+    downside: 'Scorches flora',
     apply: (r) => {
       const deltas: string[] = [];
       adj(r, 'tectonic', -28); deltas.push('-Pressure');
@@ -116,6 +165,9 @@ export const MACHINES: MachineDef[] = [
     desc: 'Awakens flora across a region. Greatly raises plant and animal life; risks overgrowth in wet zones.',
     target: 'region',
     unlockEra: 1,
+    cost: 1,
+    preview: '+Flora · +Fauna',
+    downside: 'Overgrowth if wet',
     apply: (r) => {
       const deltas: string[] = [];
       adj(r, 'flora', +24); deltas.push('+Flora');
@@ -133,6 +185,9 @@ export const MACHINES: MachineDef[] = [
     desc: 'Redistributes air currents globally: spreads moisture and disperses pollution across all regions.',
     target: 'global',
     unlockEra: 2,
+    cost: 2,
+    preview: 'Averages moisture & pollution',
+    downside: 'Spreads wetness too',
     apply: (_r, w) => {
       const avgM = w.regions.reduce((s, r) => s + r.moisture, 0) / w.regions.length;
       const avgP = w.regions.reduce((s, r) => s + r.pollution, 0) / w.regions.length;
@@ -152,6 +207,9 @@ export const MACHINES: MachineDef[] = [
     desc: 'Targeted purification array. Strongly reduces pollution but stresses local prosperity for a turn.',
     target: 'region',
     unlockEra: 4,
+    cost: 2,
+    preview: '−Pollution · +Fauna',
+    downside: 'Prosperity dips',
     apply: (r) => {
       const deltas: string[] = [];
       adj(r, 'pollution', -32); deltas.push('-Pollution');
@@ -170,6 +228,9 @@ export const MACHINES: MachineDef[] = [
     desc: 'Soothing resonance calms human regions. Reduces unrest, slowly raises prosperity, slows further growth.',
     target: 'region',
     unlockEra: 5,
+    cost: 2,
+    preview: '+Prosperity · −Unrest',
+    downside: 'Slow payoff',
     apply: (r) => {
       const deltas: string[] = [];
       adj(r, 'prosperity', +14); deltas.push('+Prosperity');
@@ -178,6 +239,185 @@ export const MACHINES: MachineDef[] = [
       return deltas;
     },
     cooldown: 2,
+  },
+  // ------------ NEW STAGE MACHINES ------------
+  {
+    id: 'storm',
+    name: 'Storm Lattice',
+    short: 'Route Storms',
+    iconKey: 'icon-storm',
+    accent: '#6aa8ff',
+    desc: 'Advanced moisture router: drains moisture from the driest region and floods the target with rain.',
+    target: 'region',
+    unlockEra: 3,
+    cost: 2,
+    preview: '+Big Moisture · −Driest elsewhere',
+    downside: 'Flood risk',
+    apply: (r, w) => {
+      const deltas: string[] = [];
+      adj(r, 'moisture', +32); deltas.push('++Moisture');
+      adj(r, 'temperature', -4);
+      // drain from the globally driest region
+      const driest = [...w.regions].filter(x => x.id !== r.id).sort((a, b) => a.moisture - b.moisture)[0];
+      if (driest) { driest.moisture = clamp(driest.moisture - 14); deltas.push(`${driest.name[0]}↓`); }
+      if (r.moisture > 90) { adj(r, 'prosperity', -8); r.flag = 'flood'; deltas.push('Floods!'); }
+      return deltas;
+    },
+    cooldown: 2,
+  },
+  {
+    id: 'solar',
+    name: 'Solar Lens',
+    short: 'Focus Sunlight',
+    iconKey: 'icon-solar',
+    accent: '#f0c860',
+    desc: 'Focuses solar heat on a region. Warms cold land and revives flood-damaged prosperity, but risks drought.',
+    target: 'region',
+    unlockEra: 2,
+    cost: 1,
+    preview: '+Heat · +Prosperity (cold)',
+    downside: 'Drought risk',
+    apply: (r) => {
+      const deltas: string[] = [];
+      adj(r, 'temperature', +14); deltas.push('+Heat');
+      if (r.temperature < 55) adj(r, 'prosperity', +6);
+      adj(r, 'moisture', -8);
+      adj(r, 'pollution', +2);
+      if (r.moisture < 25 && r.temperature > 70) { adj(r, 'flora', -6); deltas.push('Scorches'); }
+      return deltas;
+    },
+  },
+  {
+    id: 'root',
+    name: 'Root Network',
+    short: 'Anchor Flora',
+    iconKey: 'icon-root',
+    accent: '#3a7a4a',
+    desc: 'Weaves living roots through a region. Long-lasting flora stability; absorbs pollution over several turns.',
+    target: 'region',
+    unlockEra: 3,
+    cost: 2,
+    preview: 'Rooted condition · −Pollution over time',
+    downside: 'Prosperity slows',
+    apply: (r) => {
+      // The sim applies the condition; here we also give a small immediate bump.
+      const deltas: string[] = [];
+      adj(r, 'flora', +10); deltas.push('+Flora');
+      adj(r, 'pollution', -4);
+      adj(r, 'prosperity', -2);
+      return deltas;
+    },
+    cooldown: 2,
+  },
+  {
+    id: 'tide',
+    name: 'Tide Engine',
+    short: 'Tune the Ocean',
+    iconKey: 'icon-tide',
+    accent: '#2a78a8',
+    desc: 'Channels deep-sea currents. Boosts The Deep and bleeds pollution out of coastal regions.',
+    target: 'global',
+    unlockEra: 4,
+    cost: 2,
+    preview: 'Deep + coastal boost',
+    downside: 'Flood risk on coasts',
+    apply: (_r, w) => {
+      const deep = w.regions.find(r => r.id === 'deep_sea');
+      if (deep) { deep.fauna = clamp(deep.fauna + 10); deep.flora = clamp(deep.flora + 4); }
+      w.regions.forEach(r => {
+        if (r.id === 'deep_sea') return;
+        r.pollution = clamp(r.pollution - 6);
+        r.moisture = clamp(r.moisture + 4);
+      });
+      return ['Tides Sung'];
+    },
+    cooldown: 3,
+  },
+  {
+    id: 'ember',
+    name: 'Ember Forge',
+    short: 'Stoke Industry',
+    iconKey: 'icon-ember',
+    accent: '#e8853a',
+    desc: 'Ignites industry in a region. Enormous prosperity gain — at grim ecological cost.',
+    target: 'region',
+    unlockEra: 4,
+    cost: 2,
+    preview: '++Prosperity · −Tectonics',
+    downside: '++Pollution · −Flora',
+    apply: (r) => {
+      const deltas: string[] = [];
+      adj(r, 'prosperity', +22); deltas.push('++Prosperity');
+      adj(r, 'tectonic', -6);
+      adj(r, 'pollution', +20); deltas.push('++Pollution');
+      adj(r, 'flora', -10);
+      return deltas;
+    },
+  },
+  {
+    id: 'relay',
+    name: 'Fauna Relay',
+    short: 'Migrate Herds',
+    iconKey: 'icon-relay',
+    accent: '#b07a3a',
+    desc: 'Channels wildlife from the healthiest neighbouring region into the target. Donor loses some fauna briefly.',
+    target: 'region',
+    unlockEra: 3,
+    cost: 1,
+    preview: '+Fauna · Donor ↓',
+    downside: 'Donor destabilised',
+    apply: (r, w) => {
+      // donor = any region with highest fauna (not the target). Prefers neighbours.
+      const deltas: string[] = [];
+      const pool = w.regions.filter(x => x.id !== r.id);
+      pool.sort((a, b) => b.fauna - a.fauna);
+      const donor = pool[0];
+      if (donor) {
+        const moved = Math.min(18, donor.fauna * 0.3);
+        donor.fauna = clamp(donor.fauna - moved);
+        r.fauna = clamp(r.fauna + moved + 4);
+        deltas.push(`+Fauna from ${donor.name[0]}`);
+      }
+      return deltas;
+    },
+  },
+  {
+    id: 'seeder',
+    name: 'Cloud Seeder',
+    short: 'Seed Skies',
+    iconKey: 'icon-seeder',
+    accent: '#8fd6ff',
+    desc: 'Seeds atmospheric patterns in a region. Smooths drought extremes over several turns.',
+    target: 'region',
+    unlockEra: 3,
+    cost: 1,
+    preview: 'Seeded condition · gentle moisture',
+    downside: 'Weaker direct rain',
+    apply: (r) => {
+      const deltas: string[] = [];
+      adj(r, 'moisture', +6);
+      adj(r, 'temperature', -2);
+      deltas.push('Seeded');
+      return deltas;
+    },
+  },
+  {
+    id: 'lullaby',
+    name: 'Core Lullaby',
+    short: 'Still the Core',
+    iconKey: 'icon-lullaby',
+    accent: '#8060c0',
+    desc: 'A planetary hymn slows tectonic pressure across the globe for several turns.',
+    target: 'global',
+    unlockEra: 6,
+    cost: 3,
+    preview: 'Global tectonic slow · big cost',
+    downside: '−Prosperity',
+    apply: (_r, w) => {
+      w.regions.forEach(r => { r.tectonic = clamp(r.tectonic - 10); r.prosperity = clamp(r.prosperity - 3); });
+      return ['Core Quieted'];
+    },
+    cooldown: 3,
   },
 ];
 
